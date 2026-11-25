@@ -1,5 +1,5 @@
 diff --git a/app/build.gradle b/app/build.gradle
-index f2cb401..fd90528 100644
+index f2cb401..8331555 100644
 --- a/app/build.gradle
 +++ b/app/build.gradle
 @@ -129,7 +129,7 @@ android {
@@ -11,8 +11,16 @@ index f2cb401..fd90528 100644
          minSdkVersion 26
          targetSdkVersion 34
          versionCode 19
+@@ -203,6 +203,7 @@ android {
+     }
+ 
+     androidResources {
++        noCompress += "zst"
+         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:<dir>droiddeck-xbox:<dir>droiddeck-comet:<dir>droiddeck-ubisoft:<dir>droiddeck-rockstar:<dir>droiddeck-dirt:<dir>droiddeck-epic:<dir>directaudio:<dir>hybris'
+     }
+ 
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index 55b75d3..5fc187d 100644
+index 55b75d3..88f3193 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
 @@ -74,14 +74,13 @@
@@ -32,7 +40,7 @@ index 55b75d3..5fc187d 100644
  
          <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
          <service android:name=".glasses.LumaRgbCaptureService" android:exported="false"
-@@ -142,33 +141,18 @@
+@@ -142,33 +141,23 @@
  
          <activity
              android:name=".FrontEndActivity"
@@ -66,6 +74,11 @@ index 55b75d3..5fc187d 100644
 +            android:name=".DesktopLauncherActivity"
 +            android:exported="false"
 +            android:label="Droi Desktop" />
++
++        <activity
++            android:name=".DroiDistributionActivity"
++            android:exported="false"
++            android:configChanges="orientation|screenSize|keyboardHidden" />
  
          <activity-alias
              android:name=".MainActivity"
@@ -74,7 +87,7 @@ index 55b75d3..5fc187d 100644
              android:icon="@mipmap/ic_launcher"
              android:exported="true">
              <intent-filter>
-@@ -180,7 +164,7 @@
+@@ -180,7 +169,7 @@
  
          <activity-alias
              android:name=".LauncherLight"
@@ -85,24 +98,322 @@ index 55b75d3..5fc187d 100644
              android:exported="true">
 diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
 new file mode 100644
-index 0000000..3e451b8
+index 0000000..49e93b9
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,46 @@
 +package com.droiddeck.launcher
 +
 +import android.app.Activity
 +import android.content.Intent
 +import android.os.Bundle
++import android.widget.Button
++import android.widget.LinearLayout
++import android.widget.TextView
 +import com.droiddeck.launcher.session.SessionService
 +
 +class DesktopLauncherActivity : Activity() {
 +    override fun onCreate(savedInstanceState: Bundle?) {
 +        super.onCreate(savedInstanceState)
-+        startActivity(
-+            Intent(this, SessionActivity::class.java)
-+                .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
++        val menu = LinearLayout(this).apply {
++            orientation = LinearLayout.VERTICAL
++            val inset = (24 * resources.displayMetrics.density).toInt()
++            setPadding(inset, inset, inset, inset)
++        }
++        menu.addView(TextView(this).apply {
++            text = "Bureaux Linux"
++            textSize = 24f
++        })
++        val desktops = listOf(
++            "ubuntu" to "Ubuntu · KDE Plasma",
++            "debian" to "Debian 13 · XFCE",
++            "fedora" to "Fedora 44 · XFCE",
 +        )
-+        finish()
++        for ((id, label) in desktops) {
++            menu.addView(Button(this).apply {
++                text = label
++                isAllCaps = false
++                setOnClickListener {
++                    val launch = if (id == "ubuntu") {
++                        Intent(this@DesktopLauncherActivity, SessionActivity::class.java)
++                            .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
++                    } else {
++                        Intent(this@DesktopLauncherActivity, DroiDistributionActivity::class.java)
++                            .putExtra("distribution", id)
++                    }
++                    startActivity(launch)
++                }
++            })
++        }
++        setContentView(menu)
 +    }
 +}
+diff --git a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
+new file mode 100644
+index 0000000..d23beec
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
+@@ -0,0 +1,183 @@
++package com.droiddeck.launcher
++
++import android.app.Activity
++import android.os.Bundle
++import android.os.SystemClock
++import android.webkit.WebResourceRequest
++import android.webkit.WebResourceResponse
++import android.webkit.WebView
++import android.webkit.WebViewClient
++import android.widget.TextView
++import com.droiddeck.launcher.core.AddonPack
++import com.droiddeck.launcher.runtime.LinuxNetworkLinkComponent
++import com.droiddeck.launcher.runtime.LinuxRuntime
++import com.droiddeck.launcher.runtime.LinuxRuntimeInstaller
++import java.io.ByteArrayInputStream
++import java.io.File
++import java.net.HttpURLConnection
++import java.net.InetAddress
++import java.net.ServerSocket
++import java.net.URL
++import java.nio.file.Files
++import java.security.SecureRandom
++
++class DroiDistributionActivity : Activity() {
++    @Volatile private var closed = false
++    @Volatile private var guest: Process? = null
++    private var viewer: WebView? = null
++    private lateinit var status: TextView
++
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        val id = intent.getStringExtra("distribution")
++        if (id !in listOf("debian", "fedora") || id == null) {
++            finish()
++            return
++        }
++        status = TextView(this).apply {
++            text = "Préparation de Linux…"
++            gravity = android.view.Gravity.CENTER
++        }
++        setContentView(status)
++        Thread({
++            try {
++                check(AddonPack.PROOT.await(this, { !closed })) {
++                    AddonPack.PROOT.failure ?: "PRoot indisponible"
++                }
++                val root = prepareDistribution(id)
++                if (!closed) launchDesktop(id, root)
++            } catch (error: Exception) {
++                updateStatus("Impossible de démarrer $id\n${error.message.orEmpty()}")
++            } finally {
++                guest?.destroy()
++            }
++        }, "droi-$id").start()
++    }
++
++    private fun prepareDistribution(id: String): File = synchronized(installLock) {
++        check(!closed)
++        val parent = File(filesDir, "distributions").apply { mkdirs() }
++        val root = File(parent, id)
++        if (File(root, ".installed").isFile) return@synchronized root
++        val staging = File(parent, "$id.partial")
++        val archive = File(parent, "$id.tar.zst")
++        remove(staging)
++        updateStatus("Installation de $id…")
++        try {
++            assets.open("droi/$id.tar.zst").use { input ->
++                archive.outputStream().use { output -> input.copyTo(output) }
++            }
++            check(!closed)
++            check(staging.mkdir())
++            check(LinuxRuntimeInstaller.extract(this, archive, staging, null)) { "Archive Linux illisible" }
++            check(File(staging, "usr/local/bin/droi-desktop").canExecute()) { "Archive Linux incomplète" }
++            File(staging, ".installed").writeText(id)
++            check(root.exists().not() && staging.renameTo(root)) { "Installation impossible" }
++        } finally {
++            archive.delete()
++            remove(staging)
++        }
++        root
++    }
++
++    private fun launchDesktop(id: String, root: File) {
++        val resolver = File(root, "etc/resolv.conf")
++        Files.deleteIfExists(resolver.toPath())
++        LinuxNetworkLinkComponent(this, root).publish()
++        val display = 100 + SecureRandom().nextInt(800)
++        val ports = ServerSocket(0, 1, loopback).use { web ->
++            ServerSocket(0, 1, loopback).use { vnc -> web.localPort to vnc.localPort }
++        }
++        val (webPort, vncPort) = ports
++        val password = ByteArray(4).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
++        val command = LinuxRuntime.commandWithBinds(
++            this, root, listOf("/dev", "/proc", "/sys"),
++            listOf("/usr/local/bin/droi-desktop", "$webPort", "$vncPort", "$display"), true,
++        )
++        val log = File(filesDir, "distributions/$id.log")
++        val process = ProcessBuilder(command).directory(root).redirectErrorStream(true).redirectOutput(log).apply {
++            environment()["PROOT_LOADER"] = LinuxRuntime.prootLoader(this@DroiDistributionActivity).path
++            environment()["PROOT_TMP_DIR"] = LinuxRuntime.prootTempDir(this@DroiDistributionActivity).path
++            environment()["PROOT_NO_SECCOMP"] = "1"
++        }.start()
++        guest = process
++        if (closed) return
++        process.outputStream.bufferedWriter().use { it.write("$password\n") }
++        updateStatus("Démarrage du bureau XFCE…")
++        val url = "http://127.0.0.1:$webPort/vnc.html"
++        val deadline = SystemClock.elapsedRealtime() + 60_000
++        while (!closed && process.isAlive && SystemClock.elapsedRealtime() < deadline) {
++            if (responds(url)) {
++                runOnUiThread {
++                    if (!closed) showDesktop(url, webPort, password)
++                }
++                process.waitFor()
++                if (!closed) runOnUiThread { if (!closed) finish() }
++                return
++            }
++            Thread.sleep(250)
++        }
++        if (!closed) {
++            val details = log.readLines().takeLast(3).joinToString("\n")
++            error(details.ifBlank { "Le serveur d’affichage n’a pas démarré." })
++        }
++    }
++
++    private fun responds(url: String): Boolean = runCatching {
++        val connection = URL(url).openConnection() as HttpURLConnection
++        try {
++            connection.connectTimeout = 500
++            connection.readTimeout = 500
++            connection.responseCode == 200
++        } finally {
++            connection.disconnect()
++        }
++    }.getOrDefault(false)
++
++    private fun showDesktop(url: String, port: Int, password: String) {
++        viewer = WebView(this).apply {
++            settings.javaScriptEnabled = true
++            settings.domStorageEnabled = true
++            settings.allowFileAccess = false
++            settings.allowContentAccess = false
++            webViewClient = object : WebViewClient() {
++                private fun allowed(request: WebResourceRequest) =
++                    request.url.scheme == "http" && request.url.host == "127.0.0.1" && request.url.port == port
++
++                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = !allowed(request)
++
++                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
++                    if (allowed(request)) null else WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(byteArrayOf()))
++            }
++        }.also {
++            setContentView(it)
++            it.loadUrl("$url?autoconnect=1&resize=scale#password=$password")
++        }
++    }
++
++    private fun remove(file: File) {
++        if (!Files.exists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
++        Files.walk(file.toPath()).use { paths ->
++            paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
++        }
++    }
++
++    private fun updateStatus(message: String) = runOnUiThread {
++        if (!closed) status.text = message
++    }
++
++    override fun onDestroy() {
++        closed = true
++        guest?.destroy()
++        viewer?.let {
++            (it.parent as? android.view.ViewGroup)?.removeView(it)
++            it.destroy()
++        }
++        super.onDestroy()
++    }
++
++    private companion object {
++        val installLock = Any()
++        val loopback: InetAddress = InetAddress.getByName("127.0.0.1")
++    }
++}
+diff --git a/tools/droi/Dockerfile b/tools/droi/Dockerfile
+new file mode 100644
+index 0000000..9db1ab8
+--- /dev/null
++++ b/tools/droi/Dockerfile
+@@ -0,0 +1,21 @@
++ARG DISTRO=debian
++FROM debian:13-slim AS debian
++RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
++    ca-certificates dbus-x11 fonts-dejavu-core novnc websockify tigervnc-standalone-server \
++    tigervnc-tools xfce4 xfce4-terminal x11-utils xauth xkb-data && rm -rf /var/lib/apt/lists/*
++RUN ln -s /usr/bin/Xtigervnc /usr/local/bin/droi-xvnc && \
++    ln -s /usr/bin/tigervncpasswd /usr/local/bin/droi-vncpasswd && \
++    mkdir -p /usr/local/share/droi && cp -aL /usr/share/novnc /usr/local/share/droi/novnc
++
++FROM fedora:44 AS fedora
++RUN dnf -y --setopt=install_weak_deps=False install ca-certificates dbus-x11 dejavu-sans-fonts \
++    python3-websockify /usr/bin/Xvnc /usr/bin/vncpasswd xfce4-session xfce4-panel xfwm4 xfdesktop \
++    xfce4-settings thunar xfce4-terminal xorg-x11-xauth /usr/bin/xdpyinfo xkeyboard-config && dnf clean all
++COPY --from=debian /usr/local/share/droi/novnc /usr/local/share/droi/novnc
++RUN ln -s /usr/bin/Xvnc /usr/local/bin/droi-xvnc && \
++    ln -s /usr/bin/vncpasswd /usr/local/bin/droi-vncpasswd
++
++FROM ${DISTRO}
++COPY desktop.sh /usr/local/bin/droi-desktop
++RUN test -x /usr/local/bin/droi-xvnc && test -x /usr/local/bin/droi-vncpasswd && \
++    test -f /usr/local/share/droi/novnc/vnc.html && python3 -m websockify --help >/dev/null
+diff --git a/tools/droi/desktop.sh b/tools/droi/desktop.sh
+new file mode 100755
+index 0000000..39c8e82
+--- /dev/null
++++ b/tools/droi/desktop.sh
+@@ -0,0 +1,47 @@
++#!/bin/bash
++set -euo pipefail
++
++web_port=$1
++vnc_port=$2
++display_number=$3
++read -r password
++
++export HOME=/root USER=root LOGNAME=root LANG=C.UTF-8
++export DISPLAY=:$display_number XDG_RUNTIME_DIR=/tmp/droi-runtime-$display_number
++export NO_AT_BRIDGE=1 LIBGL_ALWAYS_SOFTWARE=1
++unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
++
++mkdir -p "$HOME" /tmp/.X11-unix
++chmod 1777 /tmp/.X11-unix
++mkdir -m 700 "$XDG_RUNTIME_DIR"
++export XAUTHORITY="$XDG_RUNTIME_DIR/Xauthority"
++xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
++printf '%s\n' "$password" | droi-vncpasswd -f > "$XDG_RUNTIME_DIR/passwd"
++chmod 600 "$XDG_RUNTIME_DIR/passwd"
++unset password
++
++droi-xvnc "$DISPLAY" -localhost -nolisten tcp -rfbport "$vnc_port" \
++    -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
++    -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
++x_pid=$!
++web_pid=
++desktop_pid=
++cleanup() {
++    for pid in "$desktop_pid" "$web_pid" "$x_pid"; do
++        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
++    done
++    rm -rf -- "$XDG_RUNTIME_DIR"
++}
++trap cleanup EXIT
++trap 'exit 0' TERM INT
++for _ in {1..80}; do
++    if xdpyinfo >/dev/null 2>&1; then break; fi
++    kill -0 "$x_pid"
++    sleep .25
++done
++xdpyinfo >/dev/null
++dbus-run-session -- xfce4-session &
++desktop_pid=$!
++python3 -m websockify --web /usr/local/share/droi/novnc "127.0.0.1:$web_port" "127.0.0.1:$vnc_port" &
++web_pid=$!
++wait -n "$x_pid" "$desktop_pid" "$web_pid"
