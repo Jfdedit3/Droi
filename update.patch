@@ -33,7 +33,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/app/src/main/assets/droi-launch/desktop.sh
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,111 @@
 +#!/bin/bash
 +set -euo pipefail
 +
@@ -81,9 +81,9 @@ index 0000000..1111111
 +trap cleanup EXIT
 +trap 'exit 0' TERM INT
 +wait_x() {
-+    for _ in {1..80}; do
++    for _ in {1..20}; do
 +        if ! kill -0 "$x_pid" 2>/dev/null; then return 1; fi
-+        if xdpyinfo >/dev/null 2>&1; then return 0; fi
++        if timeout 2 xdpyinfo >/dev/null 2>&1; then return 0; fi
 +        sleep .25
 +    done
 +    return 1
@@ -93,9 +93,9 @@ index 0000000..1111111
 +    if ! command -v Xvfb >/dev/null || ! command -v x11vnc >/dev/null; then
 +        echo "Droi: installing missing display packages in existing distribution"
 +        if command -v apt-get >/dev/null; then
-+            timeout 200 bash -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb x11vnc'
++            timeout 160 bash -c 'dpkg --configure -a && apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 install -y --no-install-recommends xvfb x11vnc'
 +        elif command -v dnf >/dev/null; then
-+            timeout 200 dnf -y --setopt=install_weak_deps=False install xorg-x11-server-Xvfb x11vnc
++            timeout 160 dnf -y --setopt=timeout=15 --setopt=retries=1 --setopt=install_weak_deps=False install xorg-x11-server-Xvfb x11vnc
 +        else
 +            echo "Droi: no supported package manager" >&2
 +            return 1
@@ -116,7 +116,7 @@ index 0000000..1111111
 +    done
 +    return 1
 +}
-+if [ "${DROI_FORCE_XVFB:-0}" != 1 ]; then
++if [ "${DROI_FORCE_XVFB:-0}" != 1 ] && ! { command -v Xvfb >/dev/null && command -v x11vnc >/dev/null; }; then
 +    echo "Droi: starting TigerVNC with PRoot compatibility settings"
 +    run_x droi-xvnc "$DISPLAY" -localhost -interface 127.0.0.1 -UseIPv6=0 -nolock -nolisten tcp \
 +        -extension MIT-SHM -extension GLX -rfbport "$vnc_port" \
@@ -133,8 +133,11 @@ index 0000000..1111111
 +    fi
 +    start_fallback || { echo "Droi: fallback display server failed" >&2; exit 1; }
 +fi
++echo "Droi: starting XFCE session"
++export XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb
 +dbus-run-session -- xfce4-session &
 +desktop_pid=$!
++echo "Droi: starting noVNC viewer"
 +python3 -m websockify --web /usr/local/share/droi/novnc "127.0.0.1:$web_port" "127.0.0.1:$vnc_port" &
 +web_pid=$!
 +if [ -n "$vnc_pid" ]; then
@@ -315,7 +318,20 @@ index d23beec..e43f689 100644
          }.start()
          guest = process
          if (closed) return
-@@ -118,7 +137,9 @@ class DroiDistributionActivity : Activity() {
+@@ -118,7 +137,22 @@ class DroiDistributionActivity : Activity() {
++            val recent = runCatching { log.readLines().takeLast(25) }.getOrDefault(emptyList())
++            val phase = recent.lastOrNull { it.startsWith("Droi:") }.orEmpty()
++            val message = when {
++                phase.contains("installing missing") -> "Installation des composants graphiques…"
++                phase.contains("switching") -> "Démarrage du serveur graphique de secours…"
++                phase.contains("starting XFCE") -> "Ouverture de XFCE…"
++                phase.contains("starting noVNC") -> "Connexion au bureau…"
++                else -> "Démarrage du serveur graphique…"
++            }
++            val last = recent.lastOrNull { it.isNotBlank() }.orEmpty().take(180)
++            val seconds = ((SystemClock.elapsedRealtime() - (deadline - 300_000)) / 1000).coerceAtLeast(0)
++            updateStatus("$message ($seconds s)\n$last")
++            // Keep the UI responsive and show package installation progress.
              Thread.sleep(250)
          }
          if (!closed) {
