@@ -30,10 +30,10 @@ index 88f3193..f32e231 100644
  </manifest>
 diff --git a/app/src/main/assets/droi-launch/desktop.sh b/app/src/main/assets/droi-launch/desktop.sh
 new file mode 100644
-index 0000000..62fc434
+index 0000000..abfbe12
 --- /dev/null
 +++ b/app/src/main/assets/droi-launch/desktop.sh
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,47 @@
 +#!/bin/bash
 +set -euo pipefail
 +
@@ -53,7 +53,7 @@ index 0000000..62fc434
 +chmod 600 "$XDG_RUNTIME_DIR/passwd"
 +unset password
 +
-+droi-xvnc "$DISPLAY" -localhost -nolisten tcp -rfbport "$vnc_port" \
++droi-xvnc "$DISPLAY" -localhost -interface 127.0.0.1 -UseIPv6=0 -nolock -nolisten tcp -rfbport "$vnc_port" \
 +    -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
 +    -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
 +x_pid=$!
@@ -69,7 +69,10 @@ index 0000000..62fc434
 +trap 'exit 0' TERM INT
 +for _ in {1..80}; do
 +    if xdpyinfo >/dev/null 2>&1; then break; fi
-+    kill -0 "$x_pid"
++    if ! kill -0 "$x_pid" 2>/dev/null; then
++        wait "$x_pid" || exit $?
++        exit 1
++    fi
 +    sleep .25
 +done
 +xdpyinfo >/dev/null
@@ -203,10 +206,10 @@ index 49e93b9..2094025 100644
      }
  }
 diff --git a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
-index d23beec..c0b6bad 100644
+index d23beec..e43f689 100644
 --- a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
-@@ -84,21 +84,38 @@ class DroiDistributionActivity : Activity() {
+@@ -84,21 +84,40 @@ class DroiDistributionActivity : Activity() {
          val resolver = File(root, "etc/resolv.conf")
          Files.deleteIfExists(resolver.toPath())
          LinuxNetworkLinkComponent(this, root).publish()
@@ -231,9 +234,12 @@ index d23beec..c0b6bad 100644
 +        assets.open("droi-launch/desktop.sh").use { input ->
 +            script.outputStream().use { output -> input.copyTo(output) }
 +        }
++        val shm = File(runtime, "shm")
++        check(shm.mkdir()) { "Impossible de préparer la mémoire partagée du bureau" }
          val command = LinuxRuntime.commandWithBinds(
-             this, root, listOf("/dev", "/proc", "/sys"),
+-            this, root, listOf("/dev", "/proc", "/sys"),
 -            listOf("/usr/local/bin/droi-desktop", "$webPort", "$vncPort", "$display"), true,
++            this, root, listOf("/dev", "/proc", "/sys", "${shm.path}:/dev/shm"),
 +            listOf("/bin/bash", "/tmp/${runtime.name}/desktop.sh", "$webPort", "$vncPort", "$display"), true,
          )
          val log = File(filesDir, "distributions/$id.log")
@@ -248,6 +254,17 @@ index d23beec..c0b6bad 100644
          }.start()
          guest = process
          if (closed) return
+@@ -118,7 +137,9 @@ class DroiDistributionActivity : Activity() {
+             Thread.sleep(250)
+         }
+         if (!closed) {
+-            val details = log.readLines().takeLast(3).joinToString("\n")
++            val lines = log.readLines()
++            val fatal = lines.indexOfLast { it.contains("Fatal server error", ignoreCase = true) }
++            val details = (if (fatal >= 0) lines.drop(fatal).take(14) else lines.takeLast(20)).joinToString("\n")
+             error(details.ifBlank { "Le serveur d’affichage n’a pas démarré." })
+         }
+     }
 diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
 new file mode 100644
 index 0000000..a1c569b
