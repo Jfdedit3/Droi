@@ -1,0 +1,494 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index f2cb401..83081a2 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -129,11 +129,11 @@ android {
+         .asText.get().readLines().find { it.startsWith('CI_ANDROID_NDK_VERSION=') }.split('=', 2)[1].trim()
+ 
+     defaultConfig {
+-        applicationId "com.droiddeck.launcher"
++        applicationId "com.jfdedit3.droi"
+         minSdkVersion 26
+         targetSdkVersion 34
+-        versionCode 19
+-        versionName "0.7.1"
++        versionCode = (System.getenv("DROI_VERSION_CODE") ?: "19").toInteger()
++        versionName = System.getenv("DROI_VERSION_NAME") ?: "0.7.1"
+         buildConfigField "String", "BUILD_LABEL", "\"${escapedBuildLabel}\""
+         buildConfigField "String", "SOURCE_COMMIT", "\"${sourceCommit}\""
+         buildConfigField "int", "PR_NUMBER", "${prNumber}"
+@@ -203,6 +203,7 @@ android {
+     }
+ 
+     androidResources {
++        noCompress += "zst"
+         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:<dir>droiddeck-xbox:<dir>droiddeck-comet:<dir>droiddeck-ubisoft:<dir>droiddeck-rockstar:<dir>droiddeck-dirt:<dir>droiddeck-epic:<dir>directaudio:<dir>hybris'
+     }
+ 
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 55b75d3..1a8456e 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -74,14 +74,13 @@
+         android:allowBackup="false"
+         android:allowAudioPlaybackCapture="true"
+         android:icon="@mipmap/ic_launcher"
+-        android:label="@string/app_name"
++        android:label="Droi Desktop"
+         android:theme="@style/AppTheme"
+         android:hardwareAccelerated="true"
+         android:largeHeap="true"
+         android:extractNativeLibs="true"
+         android:requestLegacyExternalStorage="true"
+-        android:appCategory="game"
+-        android:isGame="true">
++        android:appCategory="productivity">
+ 
+         <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
+         <service android:name=".glasses.LumaRgbCaptureService" android:exported="false"
+@@ -142,33 +141,18 @@
+ 
+         <activity
+             android:name=".FrontEndActivity"
+-            android:exported="true"
++            android:exported="false"
+             android:screenOrientation="user"
+-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation">
+-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp" />
+-            <intent-filter>
+-                <action android:name="android.intent.action.VIEW" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-                <category android:name="android.intent.category.BROWSABLE" />
+-                <category android:name="android.intent.category.CAR_LAUNCHER" />
+-                <data android:scheme="droiddeck" android:host="game" />
+-                <data android:scheme="droiddeck" android:host="soundtrack" />
+-                <data android:scheme="droiddeck" android:host="settings" />
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="com.droiddeck.launcher.LAUNCH_GAME" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-                <category android:name="android.intent.category.CAR_LAUNCHER" />
+-            </intent-filter>
+-        </activity>
++            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation" />
++
++        <activity
++            android:name=".DesktopLauncherActivity"
++            android:exported="false"
++            android:label="Droi Desktop" />
+ 
+         <activity-alias
+             android:name=".MainActivity"
+-            android:targetActivity=".FrontEndActivity"
++            android:targetActivity=".DesktopLauncherActivity"
+             android:icon="@mipmap/ic_launcher"
+             android:exported="true">
+             <intent-filter>
+@@ -180,7 +164,7 @@
+ 
+         <activity-alias
+             android:name=".LauncherLight"
+-            android:targetActivity=".FrontEndActivity"
++            android:targetActivity=".DesktopLauncherActivity"
+             android:icon="@mipmap/ic_launcher_light"
+             android:enabled="false"
+             android:exported="true">
+@@ -414,5 +398,10 @@
+                 android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
+                 tools:node="remove" />
+         </service>
++        <receiver android:name=".DroiUpdateInstalledReceiver" android:exported="false">
++            <intent-filter>
++                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
++            </intent-filter>
++        </receiver>
+     </application>
+ </manifest>
+diff --git a/app/src/main/java/com/droiddeck/launcher/App.kt b/app/src/main/java/com/droiddeck/launcher/App.kt
+index 58e7e12..3640fc9 100644
+--- a/app/src/main/java/com/droiddeck/launcher/App.kt
++++ b/app/src/main/java/com/droiddeck/launcher/App.kt
+@@ -57,7 +57,6 @@ class App : Application() {
+         com.droiddeck.launcher.session.SessionPrefs.settleGpuDriverMode(this)
+         com.droiddeck.launcher.session.SessionPrefs.settleStoresTabOrder(this, com.droiddeck.launcher.stores.Store.entries.map { it.id })
+         com.droiddeck.launcher.update.AppUpdates.init(this)
+-        com.droiddeck.launcher.update.UpdateWatch.sync(this, com.droiddeck.launcher.update.AppUpdates.follow(this, null))
+         com.droiddeck.launcher.core.DownloadSource.init(this)
+         prefetchAddonPacks()
+         GpuClockPin.clearLeftover(this)
+diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+new file mode 100644
+index 0000000..c9296c1
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+@@ -0,0 +1,74 @@
++package com.droiddeck.launcher
++
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.droiddeck.launcher.ui.DroidDeckTheme
++import com.droiddeck.launcher.ui.MenuItem
++import com.droiddeck.launcher.ui.SettingsGroup
++import com.droiddeck.launcher.ui.TabStrip
++import android.content.Intent
++import android.os.Bundle
++import android.widget.Toast
++import com.droiddeck.launcher.session.SessionService
++
++class DesktopLauncherActivity : ComponentActivity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        setContent {
++            DroidDeckTheme {
++                var tab by rememberSaveable { mutableIntStateOf(0) }
++                var automatic by remember { mutableStateOf(DroiUpdates.isEnabled(this)) }
++                androidx.activity.compose.BackHandler(enabled = tab != 0) { tab = 0 }
++                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++                    Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
++                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                        Text("Droi Desktop", style = MaterialTheme.typography.headlineMedium)
++                        TabStrip(listOf("Bureaux", "Paramètres"), tab, { tab = it })
++                        if (tab == 0) {
++                            SettingsGroup("Bureaux Linux") {
++                                MenuItem("Ubuntu", false, detail = "KDE Plasma") { launchUbuntu() }
++                            }
++                        } else {
++                            SettingsGroup("Mises à jour de Droi") {
++                                MenuItem("Télécharger automatiquement les nouveaux APK", automatic) {
++                                    automatic = !automatic
++                                    DroiUpdates.setEnabled(this@DesktopLauncherActivity, automatic)
++                                    if (automatic) DroiUpdates.check(this@DesktopLauncherActivity, force = true, report = ::showUpdateStatus)
++                                }
++                                val message by DroiUpdates.status.collectAsState()
++                                val available by DroiUpdates.ready.collectAsState()
++                                if (message.isNotEmpty()) Text(message)
++                                if (available > 0) MenuItem("Installer la mise à jour", false) {
++                                    DroiUpdates.install(this@DesktopLauncherActivity)
++                                }
++                                MenuItem("Vérifier maintenant", false) {
++                                    DroiUpdates.check(this@DesktopLauncherActivity, force = true, manual = true, report = ::showUpdateStatus)
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++        DroiUpdates.check(this)
++    }
++
++    private fun launchUbuntu() {
++        startActivity(Intent(this, SessionActivity::class.java)
++            .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP))
++    }
++
++    private fun showUpdateStatus(message: String) {
++        runOnUiThread {
++            if (!isDestroyed && !isFinishing) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
++        }
++    }
++}
+diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+new file mode 100644
+index 0000000..8243692
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+@@ -0,0 +1,151 @@
++package com.droiddeck.launcher
++
++import android.app.DownloadManager
++import android.content.Context
++import androidx.core.content.FileProvider
++import com.droiddeck.launcher.core.Downloader
++import kotlinx.coroutines.flow.MutableStateFlow
++import java.io.File
++import android.content.BroadcastReceiver
++import android.content.Intent
++import android.util.Log
++import org.json.JSONObject
++import java.net.HttpURLConnection
++import java.net.URL
++import java.util.concurrent.atomic.AtomicBoolean
++
++internal object DroiUpdates {
++    private const val REPO = "Jfdedit3/Droi"
++    private const val ASSET = "Droi-Desktop-arm64.apk"
++    private const val MIME_TYPE = "application/vnd.android.package-archive"
++    private const val CHECK_INTERVAL = 6 * 60 * 60 * 1000L
++    private val tagPattern = Regex("droi-(\\d+)")
++    val status = MutableStateFlow("")
++    val ready = MutableStateFlow(0)
++    private fun directory(context: Context) = File(context.cacheDir, "droi-updates")
++    private fun apk(context: Context, version: Int) = File(directory(context), "$version.apk")
++    private val busy = AtomicBoolean()
++
++    private fun prefs(context: Context) = context.getSharedPreferences("droi_updates", Context.MODE_PRIVATE)
++
++    fun isEnabled(context: Context) = prefs(context).getBoolean("automatic_download", false)
++
++    fun setEnabled(context: Context, enabled: Boolean) {
++        prefs(context).edit().putBoolean("automatic_download", enabled).apply()
++    }
++
++    fun check(context: Context, force: Boolean = false, manual: Boolean = false, report: (String) -> Unit = {}) {
++        val app = context.applicationContext
++        removeInstalledDownload(app)
++        if (!manual && !isEnabled(app)) return
++        val saved = prefs(app)
++        val now = System.currentTimeMillis()
++        if (!force && now - saved.getLong("last_check", 0) in 0 until CHECK_INTERVAL) return
++        if (!busy.compareAndSet(false, true)) {
++            report("Vérification déjà en cours.")
++            return
++        }
++
++        status.value = "Vérification…"
++        Thread({
++            try {
++                val release = latestRelease()
++                val result = when {
++                    release == null || release.version <= BuildConfig.VERSION_CODE -> "Droi est à jour."
++                    !manual && !isEnabled(app) -> "Téléchargement automatique désactivé."
++                    else -> download(app, release)
++                }
++                saved.edit().putLong("last_check", now).apply()
++                status.value = result
++                report(result)
++            } catch (error: Exception) {
++                Log.w("DroiUpdates", "Update check failed", error)
++                status.value = "Échec de la mise à jour. Tu peux réessayer."
++                report(status.value)
++            } finally {
++                busy.set(false)
++            }
++        }, "droi-updates").start()
++    }
++
++    @Synchronized
++    fun removeInstalledDownload(context: Context) {
++        val saved = prefs(context)
++        val cached = saved.getInt("cached_version", 0)
++        if (cached > BuildConfig.VERSION_CODE && apk(context, cached).isFile) {
++            ready.value = cached
++        } else {
++            if (cached > 0) apk(context, cached).delete()
++            saved.edit().remove("cached_version").apply()
++            ready.value = 0
++        }
++        val version = saved.getInt("download_version", 0)
++        val id = saved.getLong("download_id", -1)
++        if (id < 0 || version !in 1..BuildConfig.VERSION_CODE) return
++        val manager = context.getSystemService(DownloadManager::class.java) ?: return
++        runCatching {
++            manager.remove(id)
++            saved.edit().remove("download_id").remove("download_version").apply()
++        }.onFailure { Log.w("DroiUpdates", "Could not clean up installed APK", it) }
++    }
++
++    private data class Release(val tag: String, val version: Int, val digest: String, val size: Long)
++
++    private fun latestRelease(): Release? {
++        val connection = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
++        try {
++            connection.connectTimeout = 12_000
++            connection.readTimeout = 12_000
++            connection.setRequestProperty("Accept", "application/vnd.github+json")
++            val status = connection.responseCode
++            if (status == 404) return null
++            check(status == 200) { "GitHub HTTP $status" }
++            val data = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
++            val tag = data.getString("tag_name")
++            val version = tagPattern.matchEntire(tag)?.groupValues?.get(1)?.toIntOrNull() ?: return null
++            val assets = data.getJSONArray("assets")
++            val asset = (0 until assets.length()).map { assets.getJSONObject(it) }.first {
++                it.optString("name") == ASSET && it.optString("state") == "uploaded"
++            }
++            return Release(tag, version, asset.getString("digest").removePrefix("sha256:"), asset.getLong("size"))
++        } finally {
++            connection.disconnect()
++        }
++    }
++
++    private fun download(context: Context, release: Release): String {
++        val target = apk(context, release.version)
++        if (ready.value == release.version && target.isFile) return "Mise à jour prête."
++        val folder = directory(context)
++        check(folder.isDirectory || folder.mkdirs())
++        val partial = File(folder, "${release.version}.part")
++        status.value = "Téléchargement…"
++        val url = "https://github.com/$REPO/releases/download/${release.tag}/$ASSET"
++        val ok = Downloader.downloadFile(url, partial, true, release.digest) { fraction ->
++            if (fraction in 0f..1f) status.value = "Téléchargement : ${(fraction * 100).toInt()} %"
++        }
++        check(ok && partial.length() == release.size && partial.renameTo(target))
++        prefs(context).edit().putInt("cached_version", release.version).apply()
++        ready.value = release.version
++        folder.listFiles()?.filter { it != target }?.forEach { it.delete() }
++        return "Mise à jour prête."
++    }
++
++    fun install(context: Context) {
++        val file = apk(context, ready.value)
++        if (!file.isFile) {
++            ready.value = 0
++            status.value = "Vérifie à nouveau pour télécharger l’APK."
++            return
++        }
++        val uri = FileProvider.getUriForFile(context, "${context.packageName}.logs", file)
++        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, MIME_TYPE)
++            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
++    }
++}
++
++class DroiUpdateInstalledReceiver : BroadcastReceiver() {
++    override fun onReceive(context: Context, intent: Intent) {
++        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) DroiUpdates.removeInstalledDownload(context)
++    }
++}
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+index 9904584..d877c44 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+@@ -811,6 +811,20 @@ class SessionService : Service() {
+         if (SessionState.mode == MODE_DESKTOP) {
+             runCatching { com.droiddeck.launcher.runtime.DesktopLanguage.ensure(this, com.droiddeck.launcher.core.AppLanguage.effective(this)) }
+                 .onFailure { Log.w(TAG, "desktop language pack: $it") }
++            // Xclipse's nested GBM/EGL path can return only black GL buffers.
++            // Use the desktop pack's existing QPainter path on Samsung Exynos.
++            val exynos = android.os.Build.HARDWARE.startsWith("s5e", ignoreCase = true) ||
++                (android.os.Build.VERSION.SDK_INT >= 31 &&
++                    android.os.Build.SOC_MANUFACTURER.equals("Samsung", ignoreCase = true))
++            if (exynos) {
++                val compositorMode = java.io.File(root, "usr/share/droiddeck/kwin-compositor")
++                runCatching {
++                    if (compositorMode.parentFile?.isDirectory == true) {
++                        compositorMode.writeText("qpainter\n")
++                        Log.i(TAG, "Droi: KDE QPainter compatibility mode enabled for Exynos")
++                    }
++                }.onFailure { Log.w(TAG, "Droi: cannot configure KDE QPainter", it) }
++            }
+         }
+ 
+         val networkLink = LinuxNetworkLinkComponent(this, root)
+diff --git a/app/src/main/res/xml/log_share_paths.xml b/app/src/main/res/xml/log_share_paths.xml
+index 9bed7b6..4d49322 100644
+--- a/app/src/main/res/xml/log_share_paths.xml
++++ b/app/src/main/res/xml/log_share_paths.xml
+@@ -1,4 +1,5 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <paths>
+     <cache-path name="shared_logs" path="share/" />
++    <cache-path name="droi_updates" path="droi-updates/" />
+ </paths>
+diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/droiddeck-desktop
+index ee1e3a3..cab1289 100644
+--- a/tools/linuxfs/desktop/droiddeck-desktop
++++ b/tools/linuxfs/desktop/droiddeck-desktop
+@@ -180,6 +180,37 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
+   export XDG_DATA_DIRS=/var/lib/snapd/desktop:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
+   export PATH=$PATH:/snap/bin
+ fi
++# The downloadable upstream desktop image also serves existing installations.
++(
++  set -e
++  mkdir -p "$HOME/.cache/droi"
++  exec 8>"$HOME/.cache/droi/browser-setup.lock"
++  flock -n 8 || exit 0
++  root_cmd=()
++  if [ "$(id -u)" != 0 ]; then root_cmd=(/usr/local/bin/droiddeck-root); fi
++  if ! command -v brave-browser >/dev/null; then
++    "${root_cmd[@]}" bash -eu -c '
++      base=https://brave-browser-apt-release.s3.brave.com
++      temp=$(mktemp -d)
++      trap "rm -rf -- \"$temp\"" EXIT
++      curl -fsSL --retry 3 "$base/brave-browser-archive-keyring.gpg" -o "$temp/keyring"
++      curl -fsSL --retry 3 "$base/brave-browser.sources" -o "$temp/sources"
++      install -Dm644 "$temp/keyring" /usr/share/keyrings/brave-browser-archive-keyring.gpg
++      install -Dm644 "$temp/sources" /etc/apt/sources.list.d/brave-browser-release.sources
++      export DEBIAN_FRONTEND=noninteractive
++      apt-get -o Acquire::Retries=3 update
++      apt-get -o DPkg::Lock::Timeout=120 install -y brave-browser
++    '
++  fi
++  test -x /usr/bin/brave-browser
++  for mime in text/html x-scheme-handler/http x-scheme-handler/https; do
++    xdg-mime default brave-browser.desktop "$mime"
++  done
++  kwriteconfig6 --file kdeglobals --group General --key BrowserApplication brave-browser.desktop
++  if dpkg-query -W -f='${db:Status-Status}' firefox 2>/dev/null | grep -qx installed; then
++    "${root_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 remove -y firefox
++  fi
++) >>"$HOME/.droi-browser-setup.log" 2>&1 &
+ update-mime-database /usr/share/mime >/dev/null 2>&1 &
+ [ -f /usr/share/icons/hicolor/icon-theme.cache ] || gtk-update-icon-cache -q -t /usr/share/icons/hicolor 2>/dev/null &
+ [ -f /usr/share/glib-2.0/schemas/gschemas.compiled ] || glib-compile-schemas /usr/share/glib-2.0/schemas 2>/dev/null
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
+index bbacb76..01397ee 100755
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
+@@ -90,7 +90,16 @@ size_of() {
+ limits=(--connect-timeout 30 --speed-limit 4096 --speed-time 60)
+ read -r -a delays <<< "${DD_STEAM_RETRY_DELAYS:-5 10 20 30 30}"
+ 
+-step() { echo "== STEP $(date -u +%H:%M:%S) $*"; }
++progress_file=
++step() {
++  echo "== STEP $(date -u +%H:%M:%S) $*"
++  if [ -n "$progress_file" ]; then
++    local message="$*"
++    message=${message/downloading Steam:/Téléchargement Steam :}
++    message=${message/ of / sur }
++    printf '%s\n' "${message/ MB/ Mo}" >> "$progress_file" || :
++  fi
++}
+ progress() {
+   local mb=$(( (done_bytes + $(size_of "$1")) / 1000000 ))
+   [ -z "${3:-}" ] && [ "$mb" = "${shown_mb:-}" ] && [ "$2" = "${shown_part:-}" ] && return 0
+@@ -241,6 +250,7 @@ run_parallel() {
+           exit 1
+         fi
+         if [ -n "$unpack" ]; then
++          step "Installation : ${blocks[index]}"
+           unzip_alone "$dir/$file" || { : > "$state/failed"; exit 1; }
+           : > "$dir/$file.unpacked"
+           rm -f "$dir/$file"
+@@ -389,6 +399,11 @@ if [ -n "$sync" ]; then
+   echo "== STEP $(date -u +%H:%M:%S) updating the arm64 Steam client to $version (was ${installed:-none}) for the x86-64 client"
+ fi
+ if [ -z "$applied" ]; then
++if [ "${DD_INSIDE:-}" = 1 ] && command -v konsole >/dev/null; then
++  progress_file="$work/steam-progress.log"
++  printf '%s\n' "Préparation de Steam…" > "$progress_file"
++  konsole --separate -p tabtitle=Steam -e tail --pid="$$" -n +1 -f "$progress_file" 9>&- >/dev/null 2>&1 &
++fi
+ total=$(grep -c . "$work/parts" 2>/dev/null || echo 0)
+ total_bytes=$(awk '{ n += $4 } END { print n + 0 }' "$work/parts")
+ 
+@@ -418,6 +433,7 @@ while read -r block file sum size; do
+     fi
+   done
+   [ -n "$fetched" ] || { echo "droiddeck-steam-install: $file failed on every CDN" >&2; exit 1; }
++  step "Installation : $block"
+   unzip -qo "$parts/$file" -d "$steam_root"
+   : > "$parts/$file.unpacked"
+   rm -f "$parts/$file"
+@@ -451,6 +467,7 @@ ln -sfn "$steam_root/linuxarm64" "$HOME/.steam/sdkarm64"
+ ln -sfn "$steam_root/steamrtarm64" "$HOME/.steam/binarm64"
+ ln -sfn "$steam_root/linux32" "$HOME/.steam/sdk32"
+ echo "$version" > "$stamp"
++step "Installation de Steam terminée."
+ rm -rf "$parts"
+ if [ -n "$fallback" ]; then
+   echo "$stable_channel" > "$channel_state"
