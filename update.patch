@@ -1,0 +1,202 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index 8331555..5782197 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -132,8 +132,8 @@ android {
+         applicationId "com.jfdedit3.droi"
+         minSdkVersion 26
+         targetSdkVersion 34
+-        versionCode 19
+-        versionName "0.7.1"
++        versionCode (System.getenv("DROI_VERSION_CODE") ?: "19").toInteger()
++        versionName (System.getenv("DROI_VERSION_NAME") ?: "0.7.1")
+         buildConfigField "String", "BUILD_LABEL", "\"${escapedBuildLabel}\""
+         buildConfigField "String", "SOURCE_COMMIT", "\"${sourceCommit}\""
+         buildConfigField "int", "PR_NUMBER", "${prNumber}"
+diff --git a/app/src/main/java/com/droiddeck/launcher/App.kt b/app/src/main/java/com/droiddeck/launcher/App.kt
+index 58e7e12..3640fc9 100644
+--- a/app/src/main/java/com/droiddeck/launcher/App.kt
++++ b/app/src/main/java/com/droiddeck/launcher/App.kt
+@@ -57,7 +57,6 @@ class App : Application() {
+         com.droiddeck.launcher.session.SessionPrefs.settleGpuDriverMode(this)
+         com.droiddeck.launcher.session.SessionPrefs.settleStoresTabOrder(this, com.droiddeck.launcher.stores.Store.entries.map { it.id })
+         com.droiddeck.launcher.update.AppUpdates.init(this)
+-        com.droiddeck.launcher.update.UpdateWatch.sync(this, com.droiddeck.launcher.update.AppUpdates.follow(this, null))
+         com.droiddeck.launcher.core.DownloadSource.init(this)
+         prefetchAddonPacks()
+         GpuClockPin.clearLeftover(this)
+diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+index 49e93b9..b595ed2 100644
+--- a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
++++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+@@ -1,11 +1,13 @@
+ package com.droiddeck.launcher
+ 
+ import android.app.Activity
++import android.app.AlertDialog
+ import android.content.Intent
+ import android.os.Bundle
+ import android.widget.Button
+ import android.widget.LinearLayout
+ import android.widget.TextView
++import android.widget.Toast
+ import com.droiddeck.launcher.session.SessionService
+ 
+ class DesktopLauncherActivity : Activity() {
+@@ -41,6 +43,35 @@ class DesktopLauncherActivity : Activity() {
+                 }
+             })
+         }
++        menu.addView(Button(this).apply {
++            text = "Paramètres"
++            isAllCaps = false
++            setOnClickListener { showSettings() }
++        })
+         setContentView(menu)
++        DroiUpdates.check(this)
++    }
++
++    private fun showSettings() {
++        AlertDialog.Builder(this)
++            .setTitle("Mises à jour de Droi")
++            .setMultiChoiceItems(
++                arrayOf("Télécharger automatiquement les nouveaux APK"),
++                booleanArrayOf(DroiUpdates.isEnabled(this)),
++            ) { _, _, enabled ->
++                DroiUpdates.setEnabled(this, enabled)
++                if (enabled) DroiUpdates.check(this, force = true, report = ::showUpdateStatus)
++            }
++            .setNeutralButton("Vérifier maintenant") { _, _ ->
++                DroiUpdates.check(this, force = true, manual = true, report = ::showUpdateStatus)
++            }
++            .setPositiveButton("Fermer", null)
++            .show()
++    }
++
++    private fun showUpdateStatus(message: String) {
++        runOnUiThread {
++            if (!isDestroyed && !isFinishing) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
++        }
+     }
+ }
+diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+new file mode 100644
+index 0000000..3a1bec8
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+@@ -0,0 +1,115 @@
++package com.droiddeck.launcher
++
++import android.app.DownloadManager
++import android.content.Context
++import android.net.Uri
++import android.os.Build
++import android.os.Environment
++import android.util.Log
++import org.json.JSONObject
++import java.net.HttpURLConnection
++import java.net.URL
++import java.util.concurrent.atomic.AtomicBoolean
++
++internal object DroiUpdates {
++    private const val REPO = "Jfdedit3/Droi"
++    private const val ASSET = "Droi-Desktop-arm64.apk"
++    private const val MIME_TYPE = "application/vnd.android.package-archive"
++    private const val CHECK_INTERVAL = 6 * 60 * 60 * 1000L
++    private val tagPattern = Regex("droi-(\\d+)")
++    private val busy = AtomicBoolean()
++
++    private fun prefs(context: Context) = context.getSharedPreferences("droi_updates", Context.MODE_PRIVATE)
++
++    fun isEnabled(context: Context) = prefs(context).getBoolean("automatic_download", false)
++
++    fun setEnabled(context: Context, enabled: Boolean) {
++        prefs(context).edit().putBoolean("automatic_download", enabled).apply()
++    }
++
++    fun check(context: Context, force: Boolean = false, manual: Boolean = false, report: (String) -> Unit = {}) {
++        val app = context.applicationContext
++        if (!manual && !isEnabled(app)) return
++        val saved = prefs(app)
++        val now = System.currentTimeMillis()
++        if (!force && now - saved.getLong("last_check", 0) in 0 until CHECK_INTERVAL) return
++        if (!busy.compareAndSet(false, true)) {
++            report("Vérification déjà en cours.")
++            return
++        }
++
++        Thread({
++            try {
++                val release = latestRelease()
++                val result = when {
++                    release == null || release.version <= BuildConfig.VERSION_CODE -> "Droi est à jour."
++                    !manual && !isEnabled(app) -> "Téléchargement automatique désactivé."
++                    else -> enqueue(app, release)
++                }
++                saved.edit().putLong("last_check", now).apply()
++                report(result)
++            } catch (error: Exception) {
++                Log.w("DroiUpdates", "Update check failed", error)
++                report("Impossible de vérifier les mises à jour.")
++            } finally {
++                busy.set(false)
++            }
++        }, "droi-updates").start()
++    }
++
++    private data class Release(val tag: String, val version: Int)
++
++    private fun latestRelease(): Release? {
++        val connection = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
++        try {
++            connection.connectTimeout = 12_000
++            connection.readTimeout = 12_000
++            connection.setRequestProperty("Accept", "application/vnd.github+json")
++            val status = connection.responseCode
++            if (status == 404) return null
++            check(status == 200) { "GitHub HTTP $status" }
++            val data = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
++            val tag = data.getString("tag_name")
++            val version = tagPattern.matchEntire(tag)?.groupValues?.get(1)?.toIntOrNull() ?: return null
++            val assets = data.getJSONArray("assets")
++            check((0 until assets.length()).any { index ->
++                assets.getJSONObject(index).let { it.optString("name") == ASSET && it.optString("state") == "uploaded" }
++            }) { "Release APK missing" }
++            return Release(tag, version)
++        } finally {
++            connection.disconnect()
++        }
++    }
++
++    private fun enqueue(context: Context, release: Release): String {
++        val saved = prefs(context)
++        val manager = requireNotNull(context.getSystemService(DownloadManager::class.java))
++        val id = saved.getLong("download_id", -1)
++        if (saved.getInt("download_version", 0) == release.version && id >= 0) {
++            manager.query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
++                if (cursor.moveToFirst()) {
++                    when (cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
++                        DownloadManager.STATUS_SUCCESSFUL -> return "L’APK est déjà téléchargé."
++                        DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PAUSED ->
++                            return "Téléchargement déjà en cours."
++                    }
++                }
++            }
++        }
++
++        val filename = "Droi-Desktop-${release.version}-arm64.apk"
++        val request = DownloadManager.Request(Uri.parse("https://github.com/$REPO/releases/download/${release.tag}/$ASSET"))
++            .setTitle(filename)
++            .setDescription("Mise à jour de Droi")
++            .setMimeType(MIME_TYPE)
++            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
++        if (Build.VERSION.SDK_INT >= 29) {
++            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
++        } else {
++            request.setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, filename)
++        }
++        val download = manager.enqueue(request)
++        saved.edit().putInt("download_version", release.version).putLong("download_id", download).apply()
++        return "Téléchargement de l’APK lancé."
++    }
++}
