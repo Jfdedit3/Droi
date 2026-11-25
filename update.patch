@@ -13,6 +13,56 @@ index 8331555..83081a2 100644
          buildConfigField "String", "BUILD_LABEL", "\"${escapedBuildLabel}\""
          buildConfigField "String", "SOURCE_COMMIT", "\"${sourceCommit}\""
          buildConfigField "int", "PR_NUMBER", "${prNumber}"
+diff --git a/app/src/main/assets/droi-launch/desktop.sh b/app/src/main/assets/droi-launch/desktop.sh
+new file mode 100644
+index 0000000..62fc434
+--- /dev/null
++++ b/app/src/main/assets/droi-launch/desktop.sh
+@@ -0,0 +1,44 @@
++#!/bin/bash
++set -euo pipefail
++
++web_port=$1
++vnc_port=$2
++display_number=$3
++read -r password
++
++export HOME=/root USER=root LOGNAME=root LANG=C.UTF-8
++export DISPLAY=:$display_number XDG_RUNTIME_DIR=/tmp/droi-runtime-$display_number
++export NO_AT_BRIDGE=1 LIBGL_ALWAYS_SOFTWARE=1
++unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
++
++export XAUTHORITY="$XDG_RUNTIME_DIR/Xauthority"
++xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
++printf '%s\n' "$password" | droi-vncpasswd -f > "$XDG_RUNTIME_DIR/passwd"
++chmod 600 "$XDG_RUNTIME_DIR/passwd"
++unset password
++
++droi-xvnc "$DISPLAY" -localhost -nolisten tcp -rfbport "$vnc_port" \
++    -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
++    -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
++x_pid=$!
++web_pid=
++desktop_pid=
++cleanup() {
++    for pid in "$desktop_pid" "$web_pid" "$x_pid"; do
++        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
++    done
++    rm -rf -- "$XDG_RUNTIME_DIR"
++}
++trap cleanup EXIT
++trap 'exit 0' TERM INT
++for _ in {1..80}; do
++    if xdpyinfo >/dev/null 2>&1; then break; fi
++    kill -0 "$x_pid"
++    sleep .25
++done
++xdpyinfo >/dev/null
++dbus-run-session -- xfce4-session &
++desktop_pid=$!
++python3 -m websockify --web /usr/local/share/droi/novnc "127.0.0.1:$web_port" "127.0.0.1:$vnc_port" &
++web_pid=$!
++wait -n "$x_pid" "$desktop_pid" "$web_pid"
 diff --git a/app/src/main/java/com/droiddeck/launcher/App.kt b/app/src/main/java/com/droiddeck/launcher/App.kt
 index 58e7e12..3640fc9 100644
 --- a/app/src/main/java/com/droiddeck/launcher/App.kt
@@ -138,17 +188,51 @@ index 49e93b9..2094025 100644
      }
  }
 diff --git a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
-index d23beec..a0b8108 100644
+index d23beec..c0b6bad 100644
 --- a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
-@@ -96,6 +96,7 @@ class DroiDistributionActivity : Activity() {
+@@ -84,21 +84,38 @@ class DroiDistributionActivity : Activity() {
+         val resolver = File(root, "etc/resolv.conf")
+         Files.deleteIfExists(resolver.toPath())
+         LinuxNetworkLinkComponent(this, root).publish()
+-        val display = 100 + SecureRandom().nextInt(800)
++        val display = (100..899).shuffled().first { !File(root, "tmp/droi-runtime-$it").exists() && !File(root, "tmp/.X${it}-lock").exists() }
+         val ports = ServerSocket(0, 1, loopback).use { web ->
+             ServerSocket(0, 1, loopback).use { vnc -> web.localPort to vnc.localPort }
+         }
+         val (webPort, vncPort) = ports
+         val password = ByteArray(4).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
++        val tmp = File(root, "tmp")
++        val sockets = File(tmp, ".X11-unix")
++        val runtime = File(tmp, "droi-runtime-$display")
++        for (dir in listOf(File(root, "root"), tmp, sockets)) {
++            check(dir.isDirectory || dir.mkdirs()) { "Dossier Linux inaccessible : ${dir.name}" }
++        }
++        android.system.Os.chmod(tmp.path, 1023)
++        android.system.Os.chmod(sockets.path, 1023)
++        check(runtime.mkdir()) { "Impossible de préparer le dossier de session" }
++        android.system.Os.chmod(runtime.path, 448)
++        val script = File(runtime, "desktop.sh")
++        assets.open("droi-launch/desktop.sh").use { input ->
++            script.outputStream().use { output -> input.copyTo(output) }
++        }
+         val command = LinuxRuntime.commandWithBinds(
+             this, root, listOf("/dev", "/proc", "/sys"),
+-            listOf("/usr/local/bin/droi-desktop", "$webPort", "$vncPort", "$display"), true,
++            listOf("/bin/bash", "/tmp/${runtime.name}/desktop.sh", "$webPort", "$vncPort", "$display"), true,
          )
          val log = File(filesDir, "distributions/$id.log")
          val process = ProcessBuilder(command).directory(root).redirectErrorStream(true).redirectOutput(log).apply {
 +            environment()["PATH"] = LinuxRuntime.GUEST_PATH
              environment()["PROOT_LOADER"] = LinuxRuntime.prootLoader(this@DroiDistributionActivity).path
              environment()["PROOT_TMP_DIR"] = LinuxRuntime.prootTempDir(this@DroiDistributionActivity).path
-             environment()["PROOT_NO_SECCOMP"] = "1"
+-            environment()["PROOT_NO_SECCOMP"] = "1"
++            if (com.droiddeck.launcher.session.SessionPrefs.prootNoSeccomp(this@DroiDistributionActivity)) {
++                environment()["PROOT_NO_SECCOMP"] = "1"
++            }
+         }.start()
+         guest = process
+         if (closed) return
 diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
 new file mode 100644
 index 0000000..3a1bec8
