@@ -1,0 +1,108 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index f2cb401..fd90528 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -129,7 +129,7 @@ android {
+         .asText.get().readLines().find { it.startsWith('CI_ANDROID_NDK_VERSION=') }.split('=', 2)[1].trim()
+ 
+     defaultConfig {
+-        applicationId "com.droiddeck.launcher"
++        applicationId "com.jfdedit3.droi"
+         minSdkVersion 26
+         targetSdkVersion 34
+         versionCode 19
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 55b75d3..5fc187d 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -74,14 +74,13 @@
+         android:allowBackup="false"
+         android:allowAudioPlaybackCapture="true"
+         android:icon="@mipmap/ic_launcher"
+-        android:label="@string/app_name"
++        android:label="Droi Desktop"
+         android:theme="@style/AppTheme"
+         android:hardwareAccelerated="true"
+         android:largeHeap="true"
+         android:extractNativeLibs="true"
+         android:requestLegacyExternalStorage="true"
+-        android:appCategory="game"
+-        android:isGame="true">
++        android:appCategory="productivity">
+ 
+         <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
+         <service android:name=".glasses.LumaRgbCaptureService" android:exported="false"
+@@ -142,33 +141,18 @@
+ 
+         <activity
+             android:name=".FrontEndActivity"
+-            android:exported="true"
++            android:exported="false"
+             android:screenOrientation="user"
+-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation">
+-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp" />
+-            <intent-filter>
+-                <action android:name="android.intent.action.VIEW" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-                <category android:name="android.intent.category.BROWSABLE" />
+-                <category android:name="android.intent.category.CAR_LAUNCHER" />
+-                <data android:scheme="droiddeck" android:host="game" />
+-                <data android:scheme="droiddeck" android:host="soundtrack" />
+-                <data android:scheme="droiddeck" android:host="settings" />
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="com.droiddeck.launcher.LAUNCH_GAME" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-                <category android:name="android.intent.category.CAR_LAUNCHER" />
+-            </intent-filter>
+-        </activity>
++            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation" />
++
++        <activity
++            android:name=".DesktopLauncherActivity"
++            android:exported="false"
++            android:label="Droi Desktop" />
+ 
+         <activity-alias
+             android:name=".MainActivity"
+-            android:targetActivity=".FrontEndActivity"
++            android:targetActivity=".DesktopLauncherActivity"
+             android:icon="@mipmap/ic_launcher"
+             android:exported="true">
+             <intent-filter>
+@@ -180,7 +164,7 @@
+ 
+         <activity-alias
+             android:name=".LauncherLight"
+-            android:targetActivity=".FrontEndActivity"
++            android:targetActivity=".DesktopLauncherActivity"
+             android:icon="@mipmap/ic_launcher_light"
+             android:enabled="false"
+             android:exported="true">
+diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+new file mode 100644
+index 0000000..3e451b8
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+@@ -0,0 +1,17 @@
++package com.droiddeck.launcher
++
++import android.app.Activity
++import android.content.Intent
++import android.os.Bundle
++import com.droiddeck.launcher.session.SessionService
++
++class DesktopLauncherActivity : Activity() {
++    override fun onCreate(savedInstanceState: Bundle?) {
++        super.onCreate(savedInstanceState)
++        startActivity(
++            Intent(this, SessionActivity::class.java)
++                .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
++        )
++        finish()
++    }
++}
