@@ -2,15 +2,9 @@
 
 Droi est une application Android qui permet de lancer un bureau Linux sur un appareil ARM64, sans root. Elle reprend le moteur Linux de [DroidDeck](https://github.com/Droid-Deck/DroidDeck).
 
-## Bureaux disponibles
+## Bureau Ubuntu
 
-| Distribution | Bureau |
-| --- | --- |
-| Ubuntu | KDE Plasma |
-| Debian 13 | XFCE |
-| Fedora 44 | XFCE |
-
-Choisis un bureau dans le menu principal. Au premier démarrage, Droi prépare les fichiers nécessaires pour la distribution choisie. Ubuntu peut télécharger des composants supplémentaires. Chaque distribution dispose de son propre espace de stockage.
+Droi lance Ubuntu avec KDE Plasma. Au premier démarrage du bureau, une connexion Internet permet d’installer Brave depuis son dépôt officiel ARM64. Une fois Brave installé, Droi le configure comme navigateur par défaut et retire le paquet Firefox.
 
 ## Installer l’APK
 
@@ -26,6 +20,6 @@ Dans Droi, ouvre **Paramètres → Télécharger automatiquement les nouveaux AP
 
 ## Compilation et sources
 
-Le [workflow GitHub Actions](.github/workflows/build-apk.yml) récupère la révision de DroidDeck utilisée par le projet, applique [le patch du lanceur](desktop.patch) et [le patch des mises à jour](update.patch), puis compile l’APK ARM64. Le [workflow des distributions](.github/workflows/build-rootfs.yml) prépare et teste les images de Debian et Fedora.
+Le [workflow GitHub Actions](.github/workflows/build-apk.yml) récupère la révision de DroidDeck utilisée par le projet, applique [les modifications de Droi](ubuntu.patch), puis compile l’APK ARM64.
 
 Le code de base est celui de [DroidDeck](https://github.com/Droid-Deck/DroidDeck), distribué sous [GNU GPL v3](https://github.com/Droid-Deck/DroidDeck/blob/d38fd373f0caf6574458abc574640f2d961d09d9/LICENSE).
