@@ -1,0 +1,54 @@
+name: Prepare ARM64 Linux distributions
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  distributions:
+    name: Build ${{ matrix.distribution }} ARM64 desktop
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution: [debian, fedora]
+    env:
+      DISTRO: ${{ matrix.distribution }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare distribution recipes
+        run: git apply --include='tools/droi/*' desktop.patch
+      - name: Build and smoke-test the desktop image
+        run: |
+          set -euo pipefail
+          docker build --build-arg DISTRO="$DISTRO" -t "droi-$DISTRO" tools/droi
+          trap 'docker rm -f droi-smoke >/dev/null 2>&1 || true' EXIT
+          printf '%s\n' smoke123 | docker run --name droi-smoke --network host -i "droi-$DISTRO" \
+            /usr/local/bin/droi-desktop 16080 15900 199 &
+          if ! curl --fail --silent --show-error --retry 40 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:16080/vnc.html -o /dev/null; then
+            docker logs droi-smoke
+            exit 1
+          fi
+          sleep 3
+          docker exec droi-smoke bash -c 'XAUTHORITY=/tmp/droi-runtime-199/Xauthority DISPLAY=:199 xdpyinfo >/dev/null'
+      - name: Export the ARM64 root filesystem
+        run: |
+          set -euo pipefail
+          mkdir -p rootfs
+          container=$(docker create "droi-$DISTRO" /bin/true)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker export "$container" | zstd -T0 -10 -o "rootfs/$DISTRO.tar.zst"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rootfs-${{ matrix.distribution }}
+          path: rootfs/*.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
