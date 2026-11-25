@@ -492,3 +492,82 @@ index bbacb76..01397ee 100755
  rm -rf "$parts"
  if [ -n "$fallback" ]; then
    echo "$stable_channel" > "$channel_state"
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
+index c6ba899..25b3c46 100755
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
+@@ -1493,8 +1493,8 @@ def system_graphics_launch(command, env):
+             if not path.is_file() or not path.stat().st_size:
+                 raise SystemGraphicsError("missing system Vulkan component: %s" % name)
+         wrapper = directory / "run-proton.py"
+-        if not os.access(wrapper, os.X_OK):
+-            raise SystemGraphicsError("system Vulkan Proton wrapper is not executable")
++        if not os.access(wrapper, os.R_OK):
++            raise SystemGraphicsError("system Vulkan Proton wrapper is not readable")
+     except OSError as error:
+         raise SystemGraphicsError("system Vulkan component is unreadable: %s" % error) from error
+     result = dict(env)
+@@ -1510,7 +1510,7 @@ def system_graphics_launch(command, env):
+     })
+     for name in ("DISABLE_WSI_LAYER", "PROTON_USE_WINED3D", "ENABLE_VK_LAYER_VALVE_steam_fossilize_1"):
+         result.pop(name, None)
+-    return [str(wrapper), *command], result
++    return ["/usr/bin/python3", str(wrapper), *command], result
+ 
+ 
+ def game_logs(command, env, app_id, now=None):
+diff --git a/tools/tests/test_game_environment.py b/tools/tests/test_game_environment.py
+index 8c58423..c204009 100644
+--- a/tools/tests/test_game_environment.py
++++ b/tools/tests/test_game_environment.py
+@@ -518,8 +518,8 @@ class SystemGraphicsLaunchTest(unittest.TestCase):
+             self.assertEqual(run.call_count, 2)
+             for call in run.call_args_list:
+                 self.assertEqual(call.args[0][:3], ["/selected/proton", "runinprefix", "reg.exe"])
+-            self.assertEqual(execute.call_args.args[:2], (str(runtime / "run-proton.py"),
+-                                                         [str(runtime / "run-proton.py"), *command]))
++            self.assertEqual(execute.call_args.args[:2], ("/usr/bin/python3",
++                                                         ["/usr/bin/python3", str(runtime / "run-proton.py"), *command]))
+ 
+     def runtime(self, root):
+         runtime = root / "system_vulkan" / ("a" * 64)
+@@ -562,7 +562,7 @@ class SystemGraphicsLaunchTest(unittest.TestCase):
+             env = MODULE["apply_config"](base, config, "42")
+             command = ["/selected/proton", "waitforexitandrun", "game with spaces.exe"]
+             launch, result = MODULE["system_graphics_launch"](command, env)
+-            self.assertEqual(launch, [str(runtime / "run-proton.py"), *command])
++            self.assertEqual(launch, ["/usr/bin/python3", str(runtime / "run-proton.py"), *command])
+             self.assertEqual(result["HYBRIS_BC_TEXTURES"], "dxvk")
+             self.assertEqual(result["VK_LAYER_PATH"], f"{runtime}/wsi:{runtime}/lib")
+             self.assertEqual(result["VK_INSTANCE_LAYERS"], "VK_LAYER_window_system_integration:VK_LAYER_HYBRIS_compat")
+@@ -592,7 +592,7 @@ class SystemGraphicsLaunchTest(unittest.TestCase):
+                     target.parent.mkdir(parents=True, exist_ok=True)
+                     target.write_bytes(b"component")
+             launch, result = MODULE["system_graphics_launch"](command, env)
+-            self.assertEqual(launch, [str(runtime / "run-proton.py"), *command])
++            self.assertEqual(launch, ["/usr/bin/python3", str(runtime / "run-proton.py"), *command])
+             self.assertEqual(result["VK_INSTANCE_LAYERS"],
+                              "VK_LAYER_window_system_integration:VK_LAYER_DROIDDECK_xclipse:VK_LAYER_HYBRIS_compat")
+             self.assertEqual(result["VK_LAYER_PATH"], f"{runtime}/wsi:{runtime}/lib:/usr/local/lib/droiddeck-xclipse")
+@@ -620,8 +620,8 @@ class SystemGraphicsLaunchTest(unittest.TestCase):
+                         if name == "run-proton.py":
+                             target.chmod(0o755)
+             (runtime / "run-proton.py").chmod(0o644)
+-            with self.assertRaises(MODULE["SystemGraphicsError"]):
+-                MODULE["system_graphics_launch"](command, env)
++            launch, _ = MODULE["system_graphics_launch"](command, env)
++            self.assertEqual(launch, ["/usr/bin/python3", str(runtime / "run-proton.py"), *command])
+             with self.assertRaises(MODULE["SystemGraphicsError"]):
+                 MODULE["system_graphics_launch"](command, dict(env, DROIDDECK_POWERVR_RUNTIME="relative"))
+ 
+@@ -645,8 +645,8 @@ class SystemGraphicsLaunchTest(unittest.TestCase):
+             self.assertEqual(stopped.exception.code, 23)
+             execute.assert_called_once()
+             path, args, actual_env = execute.call_args.args
+-            self.assertEqual(path, str(runtime / "run-proton.py"))
+-            self.assertEqual(args, [path, *selected])
++            self.assertEqual(path, "/usr/bin/python3")
++            self.assertEqual(args, [path, str(runtime / "run-proton.py"), *selected])
+             self.assertEqual(actual_env["WINESERVER"], "/sync-pack/wineserver")
+             self.assertEqual(actual_env["DD_SYNC_PACK"], "selected")
+ 
