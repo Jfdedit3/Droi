@@ -30,10 +30,10 @@ index 88f3193..f32e231 100644
  </manifest>
 diff --git a/app/src/main/assets/droi-launch/desktop.sh b/app/src/main/assets/droi-launch/desktop.sh
 new file mode 100644
-index 0000000..abfbe12
+index 0000000..1111111
 --- /dev/null
 +++ b/app/src/main/assets/droi-launch/desktop.sh
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,108 @@
 +#!/bin/bash
 +set -euo pipefail
 +
@@ -47,40 +47,101 @@ index 0000000..abfbe12
 +export NO_AT_BRIDGE=1 LIBGL_ALWAYS_SOFTWARE=1
 +unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
 +
++mkdir -p "$HOME" /tmp/.X11-unix "$XDG_RUNTIME_DIR"
++chmod 1777 /tmp/.X11-unix
++chmod 700 "$XDG_RUNTIME_DIR"
 +export XAUTHORITY="$XDG_RUNTIME_DIR/Xauthority"
 +xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 +printf '%s\n' "$password" | droi-vncpasswd -f > "$XDG_RUNTIME_DIR/passwd"
 +chmod 600 "$XDG_RUNTIME_DIR/passwd"
 +unset password
 +
-+droi-xvnc "$DISPLAY" -localhost -interface 127.0.0.1 -UseIPv6=0 -nolock -nolisten tcp -rfbport "$vnc_port" \
-+    -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
-+    -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
-+x_pid=$!
++# PRoot cannot reliably unwind a thread if libgcc_s is loaded lazily.
++gcc_preload=
++for lib in /lib/aarch64-linux-gnu/libgcc_s.so.1 /usr/lib/aarch64-linux-gnu/libgcc_s.so.1 /lib64/libgcc_s.so.1 /usr/lib64/libgcc_s.so.1; do
++    if [ -r "$lib" ]; then gcc_preload="$lib"; break; fi
++done
++run_x() {
++    if [ -n "$gcc_preload" ]; then
++        exec env LD_PRELOAD="$gcc_preload${LD_PRELOAD:+:$LD_PRELOAD}" "$@"
++    else
++        exec "$@"
++    fi
++}
++x_pid=
++vnc_pid=
 +web_pid=
 +desktop_pid=
 +cleanup() {
-+    for pid in "$desktop_pid" "$web_pid" "$x_pid"; do
++    for pid in "$desktop_pid" "$web_pid" "$vnc_pid" "$x_pid"; do
 +        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
 +    done
 +    rm -rf -- "$XDG_RUNTIME_DIR"
 +}
 +trap cleanup EXIT
 +trap 'exit 0' TERM INT
-+for _ in {1..80}; do
-+    if xdpyinfo >/dev/null 2>&1; then break; fi
-+    if ! kill -0 "$x_pid" 2>/dev/null; then
-+        wait "$x_pid" || exit $?
-+        exit 1
++wait_x() {
++    for _ in {1..80}; do
++        if ! kill -0 "$x_pid" 2>/dev/null; then return 1; fi
++        if xdpyinfo >/dev/null 2>&1; then return 0; fi
++        sleep .25
++    done
++    return 1
++}
++start_fallback() {
++    echo "Droi: switching to Xvfb + x11vnc"
++    if ! command -v Xvfb >/dev/null || ! command -v x11vnc >/dev/null; then
++        echo "Droi: installing missing display packages in existing distribution"
++        if command -v apt-get >/dev/null; then
++            timeout 200 bash -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb x11vnc'
++        elif command -v dnf >/dev/null; then
++            timeout 200 dnf -y --setopt=install_weak_deps=False install xorg-x11-server-Xvfb x11vnc
++        else
++            echo "Droi: no supported package manager" >&2
++            return 1
++        fi
 +    fi
-+    sleep .25
-+done
-+xdpyinfo >/dev/null
++    run_x Xvfb "$DISPLAY" -screen 0 1280x720x24 -nolock -nolisten tcp \
++        -extension MIT-SHM -extension GLX -auth "$XAUTHORITY" &
++    x_pid=$!
++    wait_x || { echo "Droi: Xvfb failed" >&2; return 1; }
++    run_x x11vnc -display "$DISPLAY" -auth "$XAUTHORITY" -localhost \
++        -rfbport "$vnc_port" -rfbauth "$XDG_RUNTIME_DIR/passwd" -forever -shared -noshm -noxdamage &
++    vnc_pid=$!
++    # Verify an RFB listener before opening the browser viewer.
++    for _ in {1..40}; do
++        kill -0 "$vnc_pid" 2>/dev/null || return 1
++        if (echo >/dev/tcp/127.0.0.1/"$vnc_port") 2>/dev/null; then return 0; fi
++        sleep .25
++    done
++    return 1
++}
++if [ "${DROI_FORCE_XVFB:-0}" != 1 ]; then
++    echo "Droi: starting TigerVNC with PRoot compatibility settings"
++    run_x droi-xvnc "$DISPLAY" -localhost -interface 127.0.0.1 -UseIPv6=0 -nolock -nolisten tcp \
++        -extension MIT-SHM -extension GLX -rfbport "$vnc_port" \
++        -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
++        -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
++    x_pid=$!
++fi
++if [ -z "$x_pid" ] || ! wait_x; then
++    if [ -n "$x_pid" ]; then
++        kill "$x_pid" 2>/dev/null || true
++        wait "$x_pid" 2>/dev/null || true
++        x_pid=
++        rm -f -- "/tmp/.X11-unix/X$display_number" "/tmp/.X${display_number}-lock"
++    fi
++    start_fallback || { echo "Droi: fallback display server failed" >&2; exit 1; }
++fi
 +dbus-run-session -- xfce4-session &
 +desktop_pid=$!
 +python3 -m websockify --web /usr/local/share/droi/novnc "127.0.0.1:$web_port" "127.0.0.1:$vnc_port" &
 +web_pid=$!
-+wait -n "$x_pid" "$desktop_pid" "$web_pid"
++if [ -n "$vnc_pid" ]; then
++    wait -n "$x_pid" "$vnc_pid" "$desktop_pid" "$web_pid"
++else
++    wait -n "$x_pid" "$desktop_pid" "$web_pid"
++fi
 diff --git a/app/src/main/java/com/droiddeck/launcher/App.kt b/app/src/main/java/com/droiddeck/launcher/App.kt
 index 58e7e12..3640fc9 100644
 --- a/app/src/main/java/com/droiddeck/launcher/App.kt
@@ -261,7 +322,7 @@ index d23beec..e43f689 100644
 -            val details = log.readLines().takeLast(3).joinToString("\n")
 +            val lines = log.readLines()
 +            val fatal = lines.indexOfLast { it.contains("Fatal server error", ignoreCase = true) }
-+            val details = (if (fatal >= 0) lines.drop(fatal).take(14) else lines.takeLast(20)).joinToString("\n")
++            val details = (if (fatal >= 0 && lines.size - fatal <= 30) lines.drop(fatal) else lines.takeLast(30)).joinToString("\n")
              error(details.ifBlank { "Le serveur d’affichage n’a pas démarré." })
          }
      }

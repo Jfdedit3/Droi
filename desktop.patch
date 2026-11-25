@@ -261,7 +261,7 @@ index 0000000..d23beec
 +        process.outputStream.bufferedWriter().use { it.write("$password\n") }
 +        updateStatus("Démarrage du bureau XFCE…")
 +        val url = "http://127.0.0.1:$webPort/vnc.html"
-+        val deadline = SystemClock.elapsedRealtime() + 60_000
++        val deadline = SystemClock.elapsedRealtime() + 300_000
 +        while (!closed && process.isAlive && SystemClock.elapsedRealtime() < deadline) {
 +            if (responds(url)) {
 +                runOnUiThread {
@@ -347,14 +347,14 @@ index 0000000..9db1ab8
 +FROM debian:13-slim AS debian
 +RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 +    ca-certificates dbus-x11 fonts-dejavu-core novnc websockify tigervnc-standalone-server \
-+    tigervnc-tools xfce4 xfce4-terminal x11-utils xauth xkb-data && rm -rf /var/lib/apt/lists/*
++    tigervnc-tools xvfb x11vnc xfce4 xfce4-terminal x11-utils xauth xkb-data && rm -rf /var/lib/apt/lists/*
 +RUN ln -s /usr/bin/Xtigervnc /usr/local/bin/droi-xvnc && \
 +    ln -s /usr/bin/tigervncpasswd /usr/local/bin/droi-vncpasswd && \
 +    mkdir -p /usr/local/share/droi && cp -aL /usr/share/novnc /usr/local/share/droi/novnc
 +
 +FROM fedora:44 AS fedora
 +RUN dnf -y --setopt=install_weak_deps=False install ca-certificates dbus-x11 dejavu-sans-fonts \
-+    python3-websockify /usr/bin/Xvnc /usr/bin/vncpasswd xfce4-session xfce4-panel xfwm4 xfdesktop \
++    python3-websockify /usr/bin/Xvnc /usr/bin/vncpasswd xorg-x11-server-Xvfb x11vnc xfce4-session xfce4-panel xfwm4 xfdesktop \
 +    xfce4-settings thunar xfce4-terminal xorg-x11-xauth /usr/bin/xdpyinfo xkeyboard-config && dnf clean all
 +COPY --from=debian /usr/local/share/droi/novnc /usr/local/share/droi/novnc
 +RUN ln -s /usr/bin/Xvnc /usr/local/bin/droi-xvnc && \
@@ -366,10 +366,10 @@ index 0000000..9db1ab8
 +    test -f /usr/local/share/droi/novnc/vnc.html && python3 -m websockify --help >/dev/null
 diff --git a/tools/droi/desktop.sh b/tools/droi/desktop.sh
 new file mode 100755
-index 0000000..39c8e82
+index 0000000..1111111
 --- /dev/null
 +++ b/tools/droi/desktop.sh
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,108 @@
 +#!/bin/bash
 +set -euo pipefail
 +
@@ -383,37 +383,98 @@ index 0000000..39c8e82
 +export NO_AT_BRIDGE=1 LIBGL_ALWAYS_SOFTWARE=1
 +unset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS
 +
-+mkdir -p "$HOME" /tmp/.X11-unix
++mkdir -p "$HOME" /tmp/.X11-unix "$XDG_RUNTIME_DIR"
 +chmod 1777 /tmp/.X11-unix
-+mkdir -m 700 "$XDG_RUNTIME_DIR"
++chmod 700 "$XDG_RUNTIME_DIR"
 +export XAUTHORITY="$XDG_RUNTIME_DIR/Xauthority"
 +xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 +printf '%s\n' "$password" | droi-vncpasswd -f > "$XDG_RUNTIME_DIR/passwd"
 +chmod 600 "$XDG_RUNTIME_DIR/passwd"
 +unset password
 +
-+droi-xvnc "$DISPLAY" -localhost -nolisten tcp -rfbport "$vnc_port" \
-+    -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
-+    -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
-+x_pid=$!
++# PRoot cannot reliably unwind a thread if libgcc_s is loaded lazily.
++gcc_preload=
++for lib in /lib/aarch64-linux-gnu/libgcc_s.so.1 /usr/lib/aarch64-linux-gnu/libgcc_s.so.1 /lib64/libgcc_s.so.1 /usr/lib64/libgcc_s.so.1; do
++    if [ -r "$lib" ]; then gcc_preload="$lib"; break; fi
++done
++run_x() {
++    if [ -n "$gcc_preload" ]; then
++        exec env LD_PRELOAD="$gcc_preload${LD_PRELOAD:+:$LD_PRELOAD}" "$@"
++    else
++        exec "$@"
++    fi
++}
++x_pid=
++vnc_pid=
 +web_pid=
 +desktop_pid=
 +cleanup() {
-+    for pid in "$desktop_pid" "$web_pid" "$x_pid"; do
++    for pid in "$desktop_pid" "$web_pid" "$vnc_pid" "$x_pid"; do
 +        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
 +    done
 +    rm -rf -- "$XDG_RUNTIME_DIR"
 +}
 +trap cleanup EXIT
 +trap 'exit 0' TERM INT
-+for _ in {1..80}; do
-+    if xdpyinfo >/dev/null 2>&1; then break; fi
-+    kill -0 "$x_pid"
-+    sleep .25
-+done
-+xdpyinfo >/dev/null
++wait_x() {
++    for _ in {1..80}; do
++        if ! kill -0 "$x_pid" 2>/dev/null; then return 1; fi
++        if xdpyinfo >/dev/null 2>&1; then return 0; fi
++        sleep .25
++    done
++    return 1
++}
++start_fallback() {
++    echo "Droi: switching to Xvfb + x11vnc"
++    if ! command -v Xvfb >/dev/null || ! command -v x11vnc >/dev/null; then
++        echo "Droi: installing missing display packages in existing distribution"
++        if command -v apt-get >/dev/null; then
++            timeout 200 bash -c 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb x11vnc'
++        elif command -v dnf >/dev/null; then
++            timeout 200 dnf -y --setopt=install_weak_deps=False install xorg-x11-server-Xvfb x11vnc
++        else
++            echo "Droi: no supported package manager" >&2
++            return 1
++        fi
++    fi
++    run_x Xvfb "$DISPLAY" -screen 0 1280x720x24 -nolock -nolisten tcp \
++        -extension MIT-SHM -extension GLX -auth "$XAUTHORITY" &
++    x_pid=$!
++    wait_x || { echo "Droi: Xvfb failed" >&2; return 1; }
++    run_x x11vnc -display "$DISPLAY" -auth "$XAUTHORITY" -localhost \
++        -rfbport "$vnc_port" -rfbauth "$XDG_RUNTIME_DIR/passwd" -forever -shared -noshm -noxdamage &
++    vnc_pid=$!
++    # Verify an RFB listener before opening the browser viewer.
++    for _ in {1..40}; do
++        kill -0 "$vnc_pid" 2>/dev/null || return 1
++        if (echo >/dev/tcp/127.0.0.1/"$vnc_port") 2>/dev/null; then return 0; fi
++        sleep .25
++    done
++    return 1
++}
++if [ "${DROI_FORCE_XVFB:-0}" != 1 ]; then
++    echo "Droi: starting TigerVNC with PRoot compatibility settings"
++    run_x droi-xvnc "$DISPLAY" -localhost -interface 127.0.0.1 -UseIPv6=0 -nolock -nolisten tcp \
++        -extension MIT-SHM -extension GLX -rfbport "$vnc_port" \
++        -SecurityTypes VncAuth -PasswordFile "$XDG_RUNTIME_DIR/passwd" \
++        -auth "$XAUTHORITY" -geometry 1280x720 -depth 24 &
++    x_pid=$!
++fi
++if [ -z "$x_pid" ] || ! wait_x; then
++    if [ -n "$x_pid" ]; then
++        kill "$x_pid" 2>/dev/null || true
++        wait "$x_pid" 2>/dev/null || true
++        x_pid=
++        rm -f -- "/tmp/.X11-unix/X$display_number" "/tmp/.X${display_number}-lock"
++    fi
++    start_fallback || { echo "Droi: fallback display server failed" >&2; exit 1; }
++fi
 +dbus-run-session -- xfce4-session &
 +desktop_pid=$!
 +python3 -m websockify --web /usr/local/share/droi/novnc "127.0.0.1:$web_port" "127.0.0.1:$vnc_port" &
 +web_pid=$!
-+wait -n "$x_pid" "$desktop_pid" "$web_pid"
++if [ -n "$vnc_pid" ]; then
++    wait -n "$x_pid" "$vnc_pid" "$desktop_pid" "$web_pid"
++else
++    wait -n "$x_pid" "$desktop_pid" "$web_pid"
++fi
