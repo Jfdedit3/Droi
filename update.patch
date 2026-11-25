@@ -639,3 +639,183 @@ index bbacb76..01397ee 100755
  rm -rf "$parts"
  if [ -n "$fallback" ]; then
    echo "$stable_channel" > "$channel_state"
+diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+index 2094025..2476248 100644
+--- a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
++++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+@@ -45,6 +45,12 @@ class DesktopLauncherActivity : ComponentActivity() {
+                                     DroiUpdates.setEnabled(this@DesktopLauncherActivity, automatic)
+                                     if (automatic) DroiUpdates.check(this@DesktopLauncherActivity, force = true, report = ::showUpdateStatus)
+                                 }
++                                val message by DroiUpdates.status.collectAsState()
++                                val available by DroiUpdates.ready.collectAsState()
++                                if (message.isNotEmpty()) Text(message)
++                                if (available > 0) MenuItem("Installer la mise à jour", false) {
++                                    DroiUpdates.install(this@DesktopLauncherActivity)
++                                }
+                                 MenuItem("Vérifier maintenant", false) {
+                                     DroiUpdates.check(this@DesktopLauncherActivity, force = true, manual = true, report = ::showUpdateStatus)
+                                 }
+diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+index a1c569b..8243692 100644
+--- a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
++++ b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+@@ -2,7 +2,10 @@ package com.droiddeck.launcher
+ 
+ import android.app.DownloadManager
+ import android.content.Context
+-import android.net.Uri
++import androidx.core.content.FileProvider
++import com.droiddeck.launcher.core.Downloader
++import kotlinx.coroutines.flow.MutableStateFlow
++import java.io.File
+ import android.content.BroadcastReceiver
+ import android.content.Intent
+ import android.util.Log
+@@ -17,6 +20,10 @@ internal object DroiUpdates {
+     private const val MIME_TYPE = "application/vnd.android.package-archive"
+     private const val CHECK_INTERVAL = 6 * 60 * 60 * 1000L
+     private val tagPattern = Regex("droi-(\\d+)")
++    val status = MutableStateFlow("")
++    val ready = MutableStateFlow(0)
++    private fun directory(context: Context) = File(context.cacheDir, "droi-updates")
++    private fun apk(context: Context, version: Int) = File(directory(context), "$version.apk")
+     private val busy = AtomicBoolean()
+ 
+     private fun prefs(context: Context) = context.getSharedPreferences("droi_updates", Context.MODE_PRIVATE)
+@@ -39,19 +46,22 @@ internal object DroiUpdates {
+             return
+         }
+ 
++        status.value = "Vérification…"
+         Thread({
+             try {
+                 val release = latestRelease()
+                 val result = when {
+                     release == null || release.version <= BuildConfig.VERSION_CODE -> "Droi est à jour."
+                     !manual && !isEnabled(app) -> "Téléchargement automatique désactivé."
+-                    else -> enqueue(app, release)
++                    else -> download(app, release)
+                 }
+                 saved.edit().putLong("last_check", now).apply()
++                status.value = result
+                 report(result)
+             } catch (error: Exception) {
+                 Log.w("DroiUpdates", "Update check failed", error)
+-                report("Impossible de vérifier les mises à jour.")
++                status.value = "Échec de la mise à jour. Tu peux réessayer."
++                report(status.value)
+             } finally {
+                 busy.set(false)
+             }
+@@ -61,6 +71,14 @@ internal object DroiUpdates {
+     @Synchronized
+     fun removeInstalledDownload(context: Context) {
+         val saved = prefs(context)
++        val cached = saved.getInt("cached_version", 0)
++        if (cached > BuildConfig.VERSION_CODE && apk(context, cached).isFile) {
++            ready.value = cached
++        } else {
++            if (cached > 0) apk(context, cached).delete()
++            saved.edit().remove("cached_version").apply()
++            ready.value = 0
++        }
+         val version = saved.getInt("download_version", 0)
+         val id = saved.getLong("download_id", -1)
+         if (id < 0 || version !in 1..BuildConfig.VERSION_CODE) return
+@@ -71,7 +89,7 @@ internal object DroiUpdates {
+         }.onFailure { Log.w("DroiUpdates", "Could not clean up installed APK", it) }
+     }
+ 
+-    private data class Release(val tag: String, val version: Int)
++    private data class Release(val tag: String, val version: Int, val digest: String, val size: Long)
+ 
+     private fun latestRelease(): Release? {
+         val connection = URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as HttpURLConnection
+@@ -86,46 +104,43 @@ internal object DroiUpdates {
+             val tag = data.getString("tag_name")
+             val version = tagPattern.matchEntire(tag)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+             val assets = data.getJSONArray("assets")
+-            check((0 until assets.length()).any { index ->
+-                assets.getJSONObject(index).let { it.optString("name") == ASSET && it.optString("state") == "uploaded" }
+-            }) { "Release APK missing" }
+-            return Release(tag, version)
++            val asset = (0 until assets.length()).map { assets.getJSONObject(it) }.first {
++                it.optString("name") == ASSET && it.optString("state") == "uploaded"
++            }
++            return Release(tag, version, asset.getString("digest").removePrefix("sha256:"), asset.getLong("size"))
+         } finally {
+             connection.disconnect()
+         }
+     }
+ 
+-    @Synchronized
+-    private fun enqueue(context: Context, release: Release): String {
+-        val saved = prefs(context)
+-        val manager = requireNotNull(context.getSystemService(DownloadManager::class.java))
+-        val id = saved.getLong("download_id", -1)
+-        if (saved.getInt("download_version", 0) == release.version && id >= 0) {
+-            manager.query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
+-                if (cursor.moveToFirst()) {
+-                    when (cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
+-                        DownloadManager.STATUS_SUCCESSFUL -> {
+-                            val available = runCatching { manager.openDownloadedFile(id).use { true } }.getOrDefault(false)
+-                            if (available) return "L’APK est déjà téléchargé."
+-                        }
+-                        DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PAUSED ->
+-                            return "Téléchargement déjà en cours."
+-                    }
+-                }
+-            }
++    private fun download(context: Context, release: Release): String {
++        val target = apk(context, release.version)
++        if (ready.value == release.version && target.isFile) return "Mise à jour prête."
++        val folder = directory(context)
++        check(folder.isDirectory || folder.mkdirs())
++        val partial = File(folder, "${release.version}.part")
++        status.value = "Téléchargement…"
++        val url = "https://github.com/$REPO/releases/download/${release.tag}/$ASSET"
++        val ok = Downloader.downloadFile(url, partial, true, release.digest) { fraction ->
++            if (fraction in 0f..1f) status.value = "Téléchargement : ${(fraction * 100).toInt()} %"
+         }
++        check(ok && partial.length() == release.size && partial.renameTo(target))
++        prefs(context).edit().putInt("cached_version", release.version).apply()
++        ready.value = release.version
++        folder.listFiles()?.filter { it != target }?.forEach { it.delete() }
++        return "Mise à jour prête."
++    }
+ 
+-        val filename = "Droi-Desktop-${release.version}-arm64.apk"
+-        val request = DownloadManager.Request(Uri.parse("https://github.com/$REPO/releases/download/${release.tag}/$ASSET"))
+-            .setTitle(filename)
+-            .setDescription("Mise à jour de Droi")
+-            .setMimeType(MIME_TYPE)
+-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+-        // The default DownloadManager destination is reclaimable storage.
+-        val download = manager.enqueue(request)
+-        saved.edit().putInt("download_version", release.version).putLong("download_id", download).apply()
+-        if (id >= 0) runCatching { manager.remove(id) }
+-        return "Téléchargement de l’APK lancé."
++    fun install(context: Context) {
++        val file = apk(context, ready.value)
++        if (!file.isFile) {
++            ready.value = 0
++            status.value = "Vérifie à nouveau pour télécharger l’APK."
++            return
++        }
++        val uri = FileProvider.getUriForFile(context, "${context.packageName}.logs", file)
++        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, MIME_TYPE)
++            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+     }
+ }
+ 
+diff --git a/app/src/main/res/xml/log_share_paths.xml b/app/src/main/res/xml/log_share_paths.xml
+index 9bed7b6..4d49322 100644
+--- a/app/src/main/res/xml/log_share_paths.xml
++++ b/app/src/main/res/xml/log_share_paths.xml
+@@ -1,4 +1,5 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <paths>
+     <cache-path name="shared_logs" path="share/" />
++    <cache-path name="droi_updates" path="droi-updates/" />
+ </paths>
