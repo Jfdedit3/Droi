@@ -9,7 +9,14 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: droi-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  distributions:
+    uses: ./.github/workflows/build-rootfs.yml
+
   xbox:
     name: Prepare shared ARM64 runtime dependencies
     runs-on: ubuntu-24.04-arm
@@ -226,7 +233,7 @@ jobs:
 
   build:
     name: Compile and verify ARM64 APK
-    needs: [components, xbox]
+    needs: [components, xbox, distributions]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -297,8 +304,6 @@ jobs:
       - name: Verify and unpack prepared components
         run: python3 tools/components/prepare.py unpack --tree "$(git rev-parse 'HEAD^{tree}')"
 
-      # A hosted runner needs over 20 minutes per launcher; rebuild only when its sources change, and save each
-      # build as soon as it finishes so a later timeout cannot discard it.
       - name: Restore the Ubisoft launcher build
         id: ubisoft-cache
         uses: actions/cache/restore@v4
@@ -402,7 +407,6 @@ jobs:
       - name: Check the proot pack pin against this build
         run: |
           set -euo pipefail
-          # shellcheck disable=SC1091
           source tools/packs/proot/release.env
           sha=$(sha256sum app/build/packs/proot.tar.zst | cut -d' ' -f1)
           size=$(stat -c %s app/build/packs/proot.tar.zst)
@@ -437,6 +441,11 @@ jobs:
           git apply --check .droi/desktop.patch
           git apply .droi/desktop.patch
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rootfs-*
+          path: app/src/main/assets/droi
+          merge-multiple: true
       - name: Build APK
         env:
           DROIDDECK_BUILD_LABEL: Droi Desktop
@@ -447,6 +456,9 @@ jobs:
           ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION"
           python3 tools/release/check_session_assets.py app/build/outputs/apk/release/app-release.apk
           python3 tools/release/runtime_inputs.py apk app/build/outputs/apk/release/app-release.apk
+          for distro in debian fedora; do
+            unzip -Z1 app/build/outputs/apk/release/app-release.apk "assets/droi/$distro.tar.zst"
+          done
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/Droi-Desktop-arm64.apk
 
