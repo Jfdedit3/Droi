@@ -448,6 +448,18 @@ jobs:
           pattern: rootfs-*
           path: app/src/main/assets/droi
           merge-multiple: true
+      - name: Verify both distribution archives before packaging
+        run: |
+          set -euo pipefail
+          for distro in debian fedora; do
+            test -s "app/src/main/assets/droi/$distro.tar.zst"
+            archive="app/src/main/assets/droi/$distro-novnc.tar.gz"
+            test -s "$archive"
+            tar -tzf "$archive" > "/tmp/$distro-novnc-files"
+            for asset in vnc.html app/ui.js core/rfb.js; do
+              grep -Fx "./$asset" "/tmp/$distro-novnc-files"
+            done
+          done
       - name: Build APK
         env:
           DROIDDECK_BUILD_LABEL: Droi Desktop
@@ -460,9 +472,22 @@ jobs:
           ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION"
           python3 tools/release/check_session_assets.py app/build/outputs/apk/release/app-release.apk
           python3 tools/release/runtime_inputs.py apk app/build/outputs/apk/release/app-release.apk
-          for distro in debian fedora; do
-            unzip -Z1 app/build/outputs/apk/release/app-release.apk "assets/droi/$distro.tar.zst"
-          done
+          python3 - <<'PY'
+          import hashlib
+          import pathlib
+          import zipfile
+          with zipfile.ZipFile("app/build/outputs/apk/release/app-release.apk") as apk:
+              for distro in ("debian", "fedora"):
+                  for suffix in (".tar.zst", "-novnc.tar.gz"):
+                      filename = distro + suffix
+                      name = "assets/droi/" + filename
+                      info = apk.getinfo(name)
+                      original = pathlib.Path("app/src/main/assets/droi") / filename
+                      assert info.file_size == original.stat().st_size > 0, name
+                      if suffix == "-novnc.tar.gz":
+                          assert hashlib.sha256(apk.read(name)).digest() == hashlib.sha256(original.read_bytes()).digest(), name
+                      print("Verified APK asset:", name, info.file_size)
+          PY
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/Droi-Desktop-arm64.apk
 

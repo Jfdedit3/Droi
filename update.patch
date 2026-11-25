@@ -332,7 +332,7 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.k
 index d23beec..e43f689 100644
 --- a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
-@@ -84,21 +84,43 @@ class DroiDistributionActivity : Activity() {
+@@ -84,21 +84,51 @@ class DroiDistributionActivity : Activity() {
          val resolver = File(root, "etc/resolv.conf")
          Files.deleteIfExists(resolver.toPath())
          LinuxNetworkLinkComponent(this, root).publish()
@@ -357,8 +357,16 @@ index d23beec..e43f689 100644
 +        assets.open("droi-launch/desktop.sh").use { input ->
 +            script.outputStream().use { output -> input.copyTo(output) }
 +        }
-+        assets.open("droi/$id-novnc.tar.gz").use { input ->
-+            File(runtime, "novnc.tar.gz").outputStream().use { output -> input.copyTo(output) }
++        // Older APKs may not contain the optional standalone noVNC archive.
++        // The guest launcher can use its own complete noVNC installation instead.
++        val noVncArchive = File(runtime, "novnc.tar.gz")
++        try {
++            assets.open("droi/$id-novnc.tar.gz").use { input ->
++                noVncArchive.outputStream().use { output -> input.copyTo(output) }
++            }
++        } catch (error: java.io.IOException) {
++            noVncArchive.delete()
++            android.util.Log.w("Droi", "Using guest noVNC for $id", error)
 +        }
 +        val shm = File(runtime, "shm")
 +        check(shm.mkdir()) { "Impossible de préparer la mémoire partagée du bureau" }
@@ -380,7 +388,7 @@ index d23beec..e43f689 100644
          }.start()
          guest = process
          if (closed) return
-@@ -118,7 +140,22 @@ class DroiDistributionActivity : Activity() {
+@@ -118,7 +148,22 @@ class DroiDistributionActivity : Activity() {
 +            val recent = runCatching { log.readLines() }.getOrDefault(emptyList())
 +            val phase = recent.lastOrNull { it.startsWith("Droi:") }.orEmpty()
 +            val message = when {
