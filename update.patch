@@ -468,3 +468,30 @@ index 0000000..a1c569b
 +        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) DroiUpdates.removeInstalledDownload(context)
 +    }
 +}
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+--- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+@@ -809,9 +809,23 @@
+ 
+         if (SessionState.mode == MODE_STEAM || SessionState.mode == MODE_DESKTOP) OfflineMode.apply(this, root)
+         if (SessionState.mode == MODE_DESKTOP) {
+             runCatching { com.droiddeck.launcher.runtime.DesktopLanguage.ensure(this, com.droiddeck.launcher.core.AppLanguage.effective(this)) }
+                 .onFailure { Log.w(TAG, "desktop language pack: $it") }
++            // Xclipse's nested GBM/EGL path can return only black GL buffers.
++            // Use the desktop pack's existing QPainter path on Samsung Exynos.
++            val exynos = android.os.Build.HARDWARE.startsWith("s5e", ignoreCase = true) ||
++                (android.os.Build.VERSION.SDK_INT >= 31 &&
++                    android.os.Build.SOC_MANUFACTURER.equals("Samsung", ignoreCase = true))
++            if (exynos) {
++                val compositorMode = java.io.File(root, "usr/share/droiddeck/kwin-compositor")
++                runCatching {
++                    if (compositorMode.parentFile?.isDirectory == true) {
++                        compositorMode.writeText("qpainter\n")
++                        Log.i(TAG, "Droi: KDE QPainter compatibility mode enabled for Exynos")
++                    }
++                }.onFailure { Log.w(TAG, "Droi: cannot configure KDE QPainter", it) }
++            }
+         }
+ 
+         val networkLink = LinuxNetworkLinkComponent(this, root)
+         networkLink.attach(this)
