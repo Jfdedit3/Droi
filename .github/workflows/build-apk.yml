@@ -459,6 +459,7 @@ jobs:
             for asset in vnc.html app/ui.js core/rfb.js; do
               grep -Fx "./$asset" "/tmp/$distro-novnc-files"
             done
+            mv "$archive" "app/src/main/assets/droi/$distro.novnc"
           done
       - name: Build APK
         env:
@@ -478,13 +479,13 @@ jobs:
           import zipfile
           with zipfile.ZipFile("app/build/outputs/apk/release/app-release.apk") as apk:
               for distro in ("debian", "fedora"):
-                  for suffix in (".tar.zst", "-novnc.tar.gz"):
+                  for suffix in (".tar.zst", ".novnc"):
                       filename = distro + suffix
                       name = "assets/droi/" + filename
                       info = apk.getinfo(name)
                       original = pathlib.Path("app/src/main/assets/droi") / filename
                       assert info.file_size == original.stat().st_size > 0, name
-                      if suffix == "-novnc.tar.gz":
+                      if suffix == ".novnc":
                           assert hashlib.sha256(apk.read(name)).digest() == hashlib.sha256(original.read_bytes()).digest(), name
                       print("Verified APK asset:", name, info.file_size)
           PY
