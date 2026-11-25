@@ -14,9 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  distributions:
-    uses: ./.github/workflows/build-rootfs.yml
-
   xbox:
     name: Prepare shared ARM64 runtime dependencies
     runs-on: ubuntu-24.04-arm
@@ -233,7 +230,7 @@ jobs:
 
   build:
     name: Compile and verify ARM64 APK
-    needs: [components, xbox, distributions]
+    needs: [components, xbox]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -438,29 +435,10 @@ jobs:
           persist-credentials: false
       - name: Apply the desktop launcher
         run: |
-          git apply --check .droi/desktop.patch
-          git apply .droi/desktop.patch
-          git apply --check .droi/update.patch
-          git apply .droi/update.patch
+          git apply --check .droi/ubuntu.patch
+          git apply .droi/ubuntu.patch
+          install -m644 tools/linuxfs/desktop/droiddeck-desktop app/src/main/assets/linuxfs/usr/local/bin/droiddeck-desktop
 
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: rootfs-*
-          path: app/src/main/assets/droi
-          merge-multiple: true
-      - name: Verify both distribution archives before packaging
-        run: |
-          set -euo pipefail
-          for distro in debian fedora; do
-            test -s "app/src/main/assets/droi/$distro.tar.zst"
-            archive="app/src/main/assets/droi/$distro-novnc.tar.gz"
-            test -s "$archive"
-            tar -tzf "$archive" > "/tmp/$distro-novnc-files"
-            for asset in vnc.html app/ui.js core/rfb.js; do
-              grep -Fx "./$asset" "/tmp/$distro-novnc-files"
-            done
-            mv "$archive" "app/src/main/assets/droi/$distro.novnc"
-          done
       - name: Build APK
         env:
           DROIDDECK_BUILD_LABEL: Droi Desktop
@@ -473,22 +451,6 @@ jobs:
           ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION"
           python3 tools/release/check_session_assets.py app/build/outputs/apk/release/app-release.apk
           python3 tools/release/runtime_inputs.py apk app/build/outputs/apk/release/app-release.apk
-          python3 - <<'PY'
-          import hashlib
-          import pathlib
-          import zipfile
-          with zipfile.ZipFile("app/build/outputs/apk/release/app-release.apk") as apk:
-              for distro in ("debian", "fedora"):
-                  for suffix in (".tar.zst", ".novnc"):
-                      filename = distro + suffix
-                      name = "assets/droi/" + filename
-                      info = apk.getinfo(name)
-                      original = pathlib.Path("app/src/main/assets/droi") / filename
-                      assert info.file_size == original.stat().st_size > 0, name
-                      if suffix == ".novnc":
-                          assert hashlib.sha256(apk.read(name)).digest() == hashlib.sha256(original.read_bytes()).digest(), name
-                      print("Verified APK asset:", name, info.file_size)
-          PY
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/Droi-Desktop-arm64.apk
 
