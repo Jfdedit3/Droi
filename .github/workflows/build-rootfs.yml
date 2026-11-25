@@ -21,8 +21,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Prepare distribution recipes
-        run: git apply --include='tools/droi/*' desktop.patch
+      - name: Prepare distribution recipes and the actual APK launcher
+        run: |
+          git apply --include='tools/droi/*' desktop.patch
+          git apply --include='app/src/main/assets/droi-launch/desktop.sh' update.patch
+          cp app/src/main/assets/droi-launch/desktop.sh tools/droi/desktop.sh
+          chmod +x tools/droi/desktop.sh
+          bash -n tools/droi/desktop.sh
       - name: Build and smoke-test the desktop image
         run: |
           set -euo pipefail
