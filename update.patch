@@ -361,7 +361,7 @@ index d23beec..e43f689 100644
 +        // The guest launcher can use its own complete noVNC installation instead.
 +        val noVncArchive = File(runtime, "novnc.tar.gz")
 +        try {
-+            assets.open("droi/$id-novnc.tar.gz").use { input ->
++            assets.open("droi/$id.novnc").use { input ->
 +                noVncArchive.outputStream().use { output -> input.copyTo(output) }
 +            }
 +        } catch (error: java.io.IOException) {
@@ -581,3 +581,61 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt 
  
          val networkLink = LinuxNetworkLinkComponent(this, root)
          networkLink.attach(this)
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
+index bbacb76..01397ee 100755
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
+@@ -90,7 +90,16 @@ size_of() {
+ limits=(--connect-timeout 30 --speed-limit 4096 --speed-time 60)
+ read -r -a delays <<< "${DD_STEAM_RETRY_DELAYS:-5 10 20 30 30}"
+ 
+-step() { echo "== STEP $(date -u +%H:%M:%S) $*"; }
++progress_file=
++step() {
++  echo "== STEP $(date -u +%H:%M:%S) $*"
++  if [ -n "$progress_file" ]; then
++    local message="$*"
++    message=${message/downloading Steam:/Téléchargement Steam :}
++    message=${message/ of / sur }
++    printf '%s\n' "${message/ MB/ Mo}" >> "$progress_file" || :
++  fi
++}
+ progress() {
+   local mb=$(( (done_bytes + $(size_of "$1")) / 1000000 ))
+   [ -z "${3:-}" ] && [ "$mb" = "${shown_mb:-}" ] && [ "$2" = "${shown_part:-}" ] && return 0
+@@ -241,6 +250,7 @@ run_parallel() {
+           exit 1
+         fi
+         if [ -n "$unpack" ]; then
++          step "Installation : ${blocks[index]}"
+           unzip_alone "$dir/$file" || { : > "$state/failed"; exit 1; }
+           : > "$dir/$file.unpacked"
+           rm -f "$dir/$file"
+@@ -389,6 +399,11 @@ if [ -n "$sync" ]; then
+   echo "== STEP $(date -u +%H:%M:%S) updating the arm64 Steam client to $version (was ${installed:-none}) for the x86-64 client"
+ fi
+ if [ -z "$applied" ]; then
++if [ "${DD_INSIDE:-}" = 1 ] && command -v konsole >/dev/null; then
++  progress_file="$work/steam-progress.log"
++  printf '%s\n' "Préparation de Steam…" > "$progress_file"
++  konsole --separate -p tabtitle=Steam -e tail --pid="$$" -n +1 -f "$progress_file" 9>&- >/dev/null 2>&1 &
++fi
+ total=$(grep -c . "$work/parts" 2>/dev/null || echo 0)
+ total_bytes=$(awk '{ n += $4 } END { print n + 0 }' "$work/parts")
+ 
+@@ -418,6 +433,7 @@ while read -r block file sum size; do
+     fi
+   done
+   [ -n "$fetched" ] || { echo "droiddeck-steam-install: $file failed on every CDN" >&2; exit 1; }
++  step "Installation : $block"
+   unzip -qo "$parts/$file" -d "$steam_root"
+   : > "$parts/$file.unpacked"
+   rm -f "$parts/$file"
+@@ -451,6 +467,7 @@ ln -sfn "$steam_root/linuxarm64" "$HOME/.steam/sdkarm64"
+ ln -sfn "$steam_root/steamrtarm64" "$HOME/.steam/binarm64"
+ ln -sfn "$steam_root/linux32" "$HOME/.steam/sdk32"
+ echo "$version" > "$stamp"
++step "Installation de Steam terminée."
+ rm -rf "$parts"
+ if [ -n "$fallback" ]; then
+   echo "$stable_channel" > "$channel_state"
