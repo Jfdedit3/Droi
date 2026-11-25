@@ -440,6 +440,8 @@ jobs:
         run: |
           git apply --check .droi/desktop.patch
           git apply .droi/desktop.patch
+          git apply --check .droi/update.patch
+          git apply .droi/update.patch
 
       - uses: actions/download-artifact@v4
         with:
@@ -453,6 +455,8 @@ jobs:
           set -euo pipefail
           python3 tools/powervr/fetch.py
           python3 tools/release/runtime_inputs.py record
+          export DROI_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))
+          export DROI_VERSION_NAME="0.7.1-droi.$GITHUB_RUN_NUMBER"
           ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION"
           python3 tools/release/check_session_assets.py app/build/outputs/apk/release/app-release.apk
           python3 tools/release/runtime_inputs.py apk app/build/outputs/apk/release/app-release.apk
@@ -473,3 +477,10 @@ jobs:
           path: dist/Droi-Desktop-arm64.apk
           if-no-files-found: error
           compression-level: 0
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-apk.yml
