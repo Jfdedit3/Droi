@@ -1,4 +1,5 @@
 diff --git a/app/build.gradle b/app/build.gradle
+index 8331555..83081a2 100644
 --- a/app/build.gradle
 +++ b/app/build.gradle
 @@ -132,8 +132,8 @@ android {
@@ -25,59 +26,129 @@ index 58e7e12..3640fc9 100644
          prefetchAddonPacks()
          GpuClockPin.clearLeftover(this)
 diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-index 49e93b9..b595ed2 100644
+index 49e93b9..2094025 100644
 --- a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-@@ -1,11 +1,13 @@
+@@ -1,46 +1,74 @@
  package com.droiddeck.launcher
  
- import android.app.Activity
-+import android.app.AlertDialog
+-import android.app.Activity
++import androidx.activity.ComponentActivity
++import androidx.activity.compose.setContent
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.*
++import androidx.compose.runtime.*
++import androidx.compose.runtime.saveable.rememberSaveable
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
++import com.droiddeck.launcher.ui.DroidDeckTheme
++import com.droiddeck.launcher.ui.MenuItem
++import com.droiddeck.launcher.ui.SettingsGroup
++import com.droiddeck.launcher.ui.TabStrip
  import android.content.Intent
  import android.os.Bundle
- import android.widget.Button
- import android.widget.LinearLayout
- import android.widget.TextView
+-import android.widget.Button
+-import android.widget.LinearLayout
+-import android.widget.TextView
 +import android.widget.Toast
  import com.droiddeck.launcher.session.SessionService
  
- class DesktopLauncherActivity : Activity() {
-@@ -41,6 +43,35 @@ class DesktopLauncherActivity : Activity() {
+-class DesktopLauncherActivity : Activity() {
++class DesktopLauncherActivity : ComponentActivity() {
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+-        val menu = LinearLayout(this).apply {
+-            orientation = LinearLayout.VERTICAL
+-            val inset = (24 * resources.displayMetrics.density).toInt()
+-            setPadding(inset, inset, inset, inset)
+-        }
+-        menu.addView(TextView(this).apply {
+-            text = "Bureaux Linux"
+-            textSize = 24f
+-        })
+-        val desktops = listOf(
+-            "ubuntu" to "Ubuntu · KDE Plasma",
+-            "debian" to "Debian 13 · XFCE",
+-            "fedora" to "Fedora 44 · XFCE",
+-        )
+-        for ((id, label) in desktops) {
+-            menu.addView(Button(this).apply {
+-                text = label
+-                isAllCaps = false
+-                setOnClickListener {
+-                    val launch = if (id == "ubuntu") {
+-                        Intent(this@DesktopLauncherActivity, SessionActivity::class.java)
+-                            .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
+-                    } else {
+-                        Intent(this@DesktopLauncherActivity, DroiDistributionActivity::class.java)
+-                            .putExtra("distribution", id)
++        setContent {
++            DroidDeckTheme {
++                var tab by rememberSaveable { mutableIntStateOf(0) }
++                var automatic by remember { mutableStateOf(DroiUpdates.isEnabled(this)) }
++                androidx.activity.compose.BackHandler(enabled = tab != 0) { tab = 0 }
++                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
++                    Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
++                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
++                        Text("Droi Desktop", style = MaterialTheme.typography.headlineMedium)
++                        TabStrip(listOf("Bureaux", "Paramètres"), tab, { tab = it })
++                        if (tab == 0) {
++                            SettingsGroup("Bureaux Linux") {
++                                MenuItem("Ubuntu", false, detail = "KDE Plasma") { launch("ubuntu") }
++                                MenuItem("Debian 13", false, detail = "XFCE") { launch("debian") }
++                                MenuItem("Fedora 44", false, detail = "XFCE") { launch("fedora") }
++                            }
++                        } else {
++                            SettingsGroup("Mises à jour de Droi") {
++                                MenuItem("Télécharger automatiquement les nouveaux APK", automatic) {
++                                    automatic = !automatic
++                                    DroiUpdates.setEnabled(this@DesktopLauncherActivity, automatic)
++                                    if (automatic) DroiUpdates.check(this@DesktopLauncherActivity, force = true, report = ::showUpdateStatus)
++                                }
++                                MenuItem("Vérifier maintenant", false) {
++                                    DroiUpdates.check(this@DesktopLauncherActivity, force = true, manual = true, report = ::showUpdateStatus)
++                                }
++                            }
++                        }
+                     }
+-                    startActivity(launch)
                  }
-             })
-         }
-+        menu.addView(Button(this).apply {
-+            text = "Paramètres"
-+            isAllCaps = false
-+            setOnClickListener { showSettings() }
-+        })
-         setContentView(menu)
+-            })
++            }
++        }
 +        DroiUpdates.check(this)
 +    }
 +
-+    private fun showSettings() {
-+        AlertDialog.Builder(this)
-+            .setTitle("Mises à jour de Droi")
-+            .setMultiChoiceItems(
-+                arrayOf("Télécharger automatiquement les nouveaux APK"),
-+                booleanArrayOf(DroiUpdates.isEnabled(this)),
-+            ) { _, _, enabled ->
-+                DroiUpdates.setEnabled(this, enabled)
-+                if (enabled) DroiUpdates.check(this, force = true, report = ::showUpdateStatus)
-+            }
-+            .setNeutralButton("Vérifier maintenant") { _, _ ->
-+                DroiUpdates.check(this, force = true, manual = true, report = ::showUpdateStatus)
-+            }
-+            .setPositiveButton("Fermer", null)
-+            .show()
++    private fun launch(id: String) {
++        val intent = if (id == "ubuntu") {
++            Intent(this, SessionActivity::class.java).putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
++        } else {
++            Intent(this, DroiDistributionActivity::class.java).putExtra("distribution", id)
++        }
++        startActivity(intent)
 +    }
 +
 +    private fun showUpdateStatus(message: String) {
 +        runOnUiThread {
 +            if (!isDestroyed && !isFinishing) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-+        }
+         }
+-        setContentView(menu)
      }
  }
+diff --git a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
+index d23beec..a0b8108 100644
+--- a/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
++++ b/app/src/main/java/com/droiddeck/launcher/DroiDistributionActivity.kt
+@@ -96,6 +96,7 @@ class DroiDistributionActivity : Activity() {
+         )
+         val log = File(filesDir, "distributions/$id.log")
+         val process = ProcessBuilder(command).directory(root).redirectErrorStream(true).redirectOutput(log).apply {
++            environment()["PATH"] = LinuxRuntime.GUEST_PATH
+             environment()["PROOT_LOADER"] = LinuxRuntime.prootLoader(this@DroiDistributionActivity).path
+             environment()["PROOT_TMP_DIR"] = LinuxRuntime.prootTempDir(this@DroiDistributionActivity).path
+             environment()["PROOT_NO_SECCOMP"] = "1"
 diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
 new file mode 100644
 index 0000000..3a1bec8
