@@ -35,6 +35,9 @@ jobs:
             docker logs droi-smoke
             exit 1
           fi
+          for asset in app/ui.js core/rfb.js; do
+            curl --fail --silent --show-error "http://127.0.0.1:16080/$asset" -o /dev/null
+          done
           sleep 3
           docker exec droi-smoke bash -c 'XAUTHORITY=/tmp/droi-runtime-199/Xauthority DISPLAY=:199 xdpyinfo >/dev/null'
       - name: Export the ARM64 root filesystem
@@ -43,11 +46,15 @@ jobs:
           mkdir -p rootfs
           container=$(docker create "droi-$DISTRO" /bin/true)
           trap 'docker rm "$container" >/dev/null' EXIT
+          mkdir -p novnc-export
+          docker cp "$container:/usr/local/share/droi/novnc/." novnc-export/
+          test -s novnc-export/vnc.html && test -s novnc-export/app/ui.js && test -s novnc-export/core/rfb.js
+          tar -czf "rootfs/$DISTRO-novnc.tar.gz" -C novnc-export .
           docker export "$container" | zstd -T0 -10 -o "rootfs/$DISTRO.tar.zst"
       - uses: actions/upload-artifact@v4
         with:
           name: rootfs-${{ matrix.distribution }}
-          path: rootfs/*.tar.zst
+          path: rootfs/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 3

@@ -369,7 +369,7 @@ new file mode 100755
 index 0000000..1111111
 --- /dev/null
 +++ b/tools/droi/desktop.sh
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,164 @@
 +#!/bin/bash
 +set -euo pipefail
 +
@@ -471,8 +471,64 @@ index 0000000..1111111
 +fi
 +dbus-run-session -- xfce4-session &
 +desktop_pid=$!
-+python3 -m websockify --web /usr/local/share/droi/novnc "127.0.0.1:$web_port" "127.0.0.1:$vnc_port" &
++# The APK carries an independent copy of the complete noVNC web client.
++web_root=/usr/local/share/droi/novnc
++if [ -f "$XDG_RUNTIME_DIR/novnc.tar.gz" ]; then
++    echo "Droi: preparing bundled noVNC assets"
++    mkdir -p "$XDG_RUNTIME_DIR/novnc"
++    tar -xzf "$XDG_RUNTIME_DIR/novnc.tar.gz" -C "$XDG_RUNTIME_DIR/novnc"
++    web_root="$XDG_RUNTIME_DIR/novnc"
++elif [ ! -f "$web_root/vnc.html" ] && [ -f /usr/share/novnc/vnc.html ]; then
++    web_root=/usr/share/novnc
++fi
++for asset in vnc.html app/ui.js core/rfb.js; do
++    if [ ! -r "$web_root/$asset" ]; then
++        echo "Droi: missing noVNC asset $web_root/$asset" >&2
++        exit 1
++    fi
++done
++echo "Droi: starting noVNC viewer"
++# websockify normally relies on chdir/getcwd. Under PRoot these may expose
++# host paths; force an explicit guest web root for every static HTTP request.
++python3 -u - "$web_root" "$web_port" "$vnc_port" <<'PY' &
++import http.server
++import sys
++from websockify.websocketproxy import websockify_init
++
++root, web_port, vnc_port = sys.argv[1:]
++original = http.server.SimpleHTTPRequestHandler.translate_path
++def translate_path(self, path):
++    self.directory = root
++    return original(self, path)
++http.server.SimpleHTTPRequestHandler.translate_path = translate_path
++sys.argv = ["websockify", "--web", root, "127.0.0.1:" + web_port,
++            "127.0.0.1:" + vnc_port]
++websockify_init()
++PY
 +web_pid=$!
++# Fail quickly with the precise HTTP error instead of polling for five minutes.
++python3 -u - "$web_port" <<'PY'
++import sys
++import time
++import urllib.request
++import urllib.error
++
++base = "http://127.0.0.1:" + sys.argv[1]
++for attempt in range(20):
++    try:
++        for path in ("/vnc.html", "/app/ui.js", "/core/rfb.js"):
++            with urllib.request.urlopen(base + path, timeout=1) as response:
++                if not response.read(32):
++                    raise RuntimeError("empty noVNC resource " + path)
++        print("Droi: noVNC assets verified", flush=True)
++        break
++    except urllib.error.HTTPError as error:
++        sys.exit("Droi: noVNC HTTP " + str(error.code) + " at " + error.url)
++    except OSError as error:
++        if attempt == 19:
++            sys.exit("Droi: noVNC server unavailable: " + str(error))
++        time.sleep(0.5)
++PY
 +if [ -n "$vnc_pid" ]; then
 +    wait -n "$x_pid" "$vnc_pid" "$desktop_pid" "$web_pid"
 +else
