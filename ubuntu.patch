@@ -493,7 +493,7 @@ index bbacb76..01397ee 100755
  if [ -n "$fallback" ]; then
    echo "$stable_channel" > "$channel_state"
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
-index c6ba899..25b3c46 100755
+index c6ba899..2afda26 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 +++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 @@ -1493,8 +1493,8 @@ def system_graphics_launch(command, env):
@@ -507,11 +507,14 @@ index c6ba899..25b3c46 100755
      except OSError as error:
          raise SystemGraphicsError("system Vulkan component is unreadable: %s" % error) from error
      result = dict(env)
-@@ -1510,7 +1510,7 @@ def system_graphics_launch(command, env):
+@@ -1510,7 +1510,10 @@ def system_graphics_launch(command, env):
      })
      for name in ("DISABLE_WSI_LAYER", "PROTON_USE_WINED3D", "ENABLE_VK_LAYER_VALVE_steam_fossilize_1"):
          result.pop(name, None)
 -    return [str(wrapper), *command], result
++    if game_id(env) == "678800" and "VK_LAYER_DROIDDECK_xclipse" in layers.split(":"):
++        # SAS4 initializes Wine OpenGL before its game window. Zink fails on Xclipse.
++        result.update(LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", MESA_LOADER_DRIVER_OVERRIDE="swrast")
 +    return ["/usr/bin/python3", str(wrapper), *command], result
  
  
