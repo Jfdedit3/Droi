@@ -1,0 +1,37 @@
+name: Publish the Droi APK
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Droi-Desktop-APK
+          path: dist
+      - name: Publish this APK for the in-app updater
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          code=$((1000 + GITHUB_RUN_NUMBER))
+          tag="droi-$code"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag is already published."
+            exit 0
+          fi
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+          publish_as_latest=true
+          if [[ "$latest" =~ ^droi-([0-9]+)$ ]] && (( BASH_REMATCH[1] > code )); then
+            publish_as_latest=false
+          fi
+          gh release create "$tag" dist/Droi-Desktop-arm64.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Droi Desktop $GITHUB_RUN_NUMBER" --latest="$publish_as_latest" \
+            --notes "APK Android ARM64. Ubuntu KDE Plasma, Debian XFCE et Fedora XFCE."
