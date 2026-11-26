@@ -1,0 +1,44 @@
+#!/bin/bash
+# One session-specific adjustment layer. No package downloads or root needed.
+set -u
+desktop=$1
+shift
+percent=${DROI_DESKTOP_SCALE:-150}
+case "$percent" in 100|125|150|200) ;; *) percent=150 ;; esac
+if [ "$desktop" = plasma ]; then
+  # Plasma/Wayland must not inherit X11 toolkit scaling.
+  unset QT_SCALE_FACTOR QT_SCREEN_SCALE_FACTORS QT_FONT_DPI GDK_SCALE GDK_DPI_SCALE
+  (
+    for _ in $(seq 1 30); do
+      if /usr/bin/droi-desktop-layout plasma plasma "$percent"; then
+        echo "== Droi UI: Plasma native scale $percent%"
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "== Droi UI: Plasma output scale unavailable; keeping native settings"
+  ) &
+  helper=$!
+  "$@"
+  rc=$?
+  kill "$helper" 2>/dev/null || true
+  wait "$helper" 2>/dev/null || true
+  exit "$rc"
+fi
+/usr/bin/droi-desktop-layout prepare "$desktop" "$percent" || true
+case "$desktop" in
+  icewm)
+    pcmanfm --profile droi-icewm --desktop &
+    child=$!
+    "$@"
+    rc=$?
+    kill "$child" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
+    exit "$rc"
+    ;;
+  enlightenment)
+    # X root fallback is visible before the native E theme loads.
+    command -v xsetroot >/dev/null && xsetroot -solid '#244b65' || true
+    ;;
+esac
+exec "$@"

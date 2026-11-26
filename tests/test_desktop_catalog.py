@@ -15,5 +15,8 @@ for name in expected - {"plasma"}:
 dispatch = re.search(r'^  ([a-z|]+)\)\n    droi_alternative "\$desktop_choice"', guest, re.M)
 assert dispatch and set(dispatch.group(1).split("|")) == expected - {"plasma"}
 assert '-displayfd 3' in guest
+assert 'GDK_SCALE=1 GDK_DPI_SCALE=1' in guest
+assert 'droi-desktop-ui plasma startplasma-wayland' in guest
+assert 'droi-desktop-ui "$1" "$session"' in guest
 assert 'no automatic Plasma fallback' in guest
 print("Eight desktop choices and guest dispatch verified")

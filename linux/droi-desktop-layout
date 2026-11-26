@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""Native desktop preferences, preserving unrelated settings and valid wallpapers."""
+import ast
+import json
+import os
+import re
+import shutil
+import struct
+import subprocess
+import sys
+import zlib
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+SIZES = {100: (96, 32, 28, 36), 125: (120, 40, 32, 40),
+         150: (144, 48, 36, 44), 200: (192, 56, 44, 52)}
+HOME = Path.home()
+CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config"))
+WALLPAPER = HOME / ".local/share/droi/desktop-wallpaper.png"
+
+def run(*args):
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=5)
+        if p.returncode == 0:
+            return p.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+def log(message):
+    print("== Droi UI: " + message, flush=True)
+
+def backup(path):
+    if path.is_file():
+        dest = path.with_name(path.name + ".before-droi-ui")
+        if not dest.exists():
+            shutil.copyfile(path, dest)
+
+def write(path, value):
+    if path.is_file() and path.read_text(errors="replace") == value:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup(path)
+    tmp = path.with_name(path.name + ".droi-tmp")
+    tmp.write_text(value)
+    tmp.replace(path)
+
+def source(path, *defaults):
+    if path.is_file():
+        return path.read_text(errors="replace")
+    for candidate in defaults:
+        candidate = Path(candidate)
+        if candidate.is_file():
+            return candidate.read_text(errors="replace")
+    return ""
+
+def ini_get(text, section, key):
+    current = ""
+    for line in text.splitlines():
+        match = re.fullmatch(r"\s*\[([^\]]+)\]\s*", line)
+        if match:
+            current = match.group(1)
+        elif current == section and "=" in line:
+            k, v = line.split("=", 1)
+            if k.strip() == key:
+                return v.strip()
+    return ""
+
+def ini_set(text, section, key, value):
+    # Edit only the specified key, preserving comments, case, and other groups.
+    rows = text.splitlines()
+    start = next((i for i, line in enumerate(rows)
+                  if line.strip() == "[" + section + "]"), None)
+    new = key + "=" + str(value)
+    if start is None:
+        rows.extend(["", "[" + section + "]", new])
+    else:
+        end = next((i for i in range(start + 1, len(rows))
+                    if re.match(r"\s*\[", rows[i])), len(rows))
+        for i in range(start + 1, end):
+            if rows[i].partition("=")[0].strip() == key and "=" in rows[i]:
+                rows[i] = new
+                break
+        else:
+            rows.insert(end, new)
+    return "\n".join(rows) + "\n"
+
+def wallpaper():
+    if WALLPAPER.is_file() and WALLPAPER.stat().st_size:
+        return
+    WALLPAPER.parent.mkdir(parents=True, exist_ok=True)
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+    w, h = 480, 270
+    raw = bytearray()
+    for y in range(h):
+        raw.append(0)
+        for x in range(w):
+            t = (x/(w-1) + y/(h-1))/2
+            raw.extend((int(18+22*t), int(42+48*t), int(65+63*t)))
+    tmp = WALLPAPER.with_suffix(".tmp")
+    tmp.write_bytes(b"\x89PNG\r\n\x1a\n" +
+                    chunk(b"IHDR", struct.pack(">IIBBBBB", w,h,8,2,0,0,0)) +
+                    chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    tmp.replace(WALLPAPER)
+
+def valid_image(value):
+    if value.startswith("file://"):
+        value = unquote(urlparse(value).path)
+    return bool(value) and Path(value).is_file() and os.access(value, os.R_OK)
+
+def gget(schema, key):
+    return run("gsettings", "get", schema, key)
+
+def gset(schema, key, value):
+    if gget(schema, key) is not None:
+        return run("gsettings", "set", schema, key, str(value)) is not None
+    return False
+
+def gvalue(schema, key):
+    value = gget(schema, key)
+    if value is None:
+        return None
+    try:
+        return ast.literal_eval(value.removeprefix("@as "))
+    except (ValueError, SyntaxError):
+        return None
+
+def gbackground(schema, key, uri=False):
+    current = gvalue(schema, key)
+    if isinstance(current, str) and not valid_image(current):
+        gset(schema, key, repr(WALLPAPER.as_uri() if uri else str(WALLPAPER)))
+
+def lxqt(percent, icon, panel):
+    # Qt's native scale already enlarges logical pixels.
+    logical_icon = max(24, round(icon * 100 / percent))
+    logical_panel = max(24, round(panel * 100 / percent))
+    file = CONFIG / "lxqt/panel.conf"
+    conf = source(file, "/etc/xdg/lxqt/panel.conf", "/usr/share/lxqt/panel.conf")
+    sections = re.findall(r"^\[(panel\d+)\]\s*$", conf, re.M)
+    for section in sections:
+        conf = ini_set(conf, section, "panelSize", logical_panel)
+        conf = ini_set(conf, section, "iconSize", min(logical_panel - 4, 24))
+    if sections:
+        write(file, conf)
+    file = CONFIG / "pcmanfm-qt/lxqt/settings.conf"
+    conf = source(file, "/etc/xdg/pcmanfm-qt/lxqt/settings.conf")
+    conf = ini_set(conf, "Desktop", "DesktopIconSize", logical_icon)
+    if not valid_image(ini_get(conf, "Desktop", "Wallpaper")):
+        conf = ini_set(conf, "Desktop", "Wallpaper", WALLPAPER)
+        conf = ini_set(conf, "Desktop", "WallpaperMode", "stretch")
+    write(file, conf)
+
+def mate(percent, dpi, panel, icon):
+    gset("org.mate.interface", "window-scaling-factor", 1)
+    gset("org.mate.font-rendering", "dpi", float(dpi))
+    gset("org.mate.Marco.general", "compositing-manager", "false")
+    # Use only native keys present in the installed version.
+    gset("org.mate.caja.icon-view", "default-zoom-level",
+         "'standard'" if percent <= 150 else "'large'")
+    gbackground("org.mate.background", "picture-filename")
+    ids = gvalue("org.mate.panel", "toplevel-id-list")
+    if isinstance(ids, list):
+        for name in ids:
+            if isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9_-]+", name):
+                gset("org.mate.panel.toplevel:/org/mate/panel/toplevels/" + name + "/", "size", panel)
+
+def cinnamon(percent, panel):
+    gset("org.cinnamon.desktop.interface", "scaling-factor", 1)
+    gset("org.cinnamon.desktop.interface", "text-scaling-factor", percent / 100)
+    heights = gvalue("org.cinnamon", "panels-height")
+    if isinstance(heights, list) and heights:
+        changed = [str(x).split(":", 1)[0] + ":" + str(panel)
+                   for x in heights if re.fullmatch(r"\d+:\d+", str(x))]
+        if len(changed) == len(heights):
+            gset("org.cinnamon", "panels-height", repr(changed))
+    gset("org.nemo.icon-view", "default-zoom-level",
+         "'standard'" if percent <= 150 else "'large'")
+    gbackground("org.cinnamon.desktop.background", "picture-uri", uri=True)
+
+def pcmanfm(profile, icon):
+    file = CONFIG / "libfm/libfm.conf"
+    conf = source(file, "/etc/xdg/libfm/libfm.conf")
+    conf = ini_set(conf, "config", "big_icon_size", icon)
+    write(file, conf)
+    directory = CONFIG / "pcmanfm" / profile
+    configs = sorted(directory.glob("desktop-items-*.conf"))
+    if not configs:
+        configs = [directory / "desktop-items-0.conf"]
+    for file in configs:
+        conf = source(file, "/etc/xdg/pcmanfm/" + profile + "/" + file.name)
+        if not valid_image(ini_get(conf, "*", "wallpaper")):
+            conf = ini_set(conf, "*", "wallpaper", WALLPAPER)
+            conf = ini_set(conf, "*", "wallpaper_mode", "stretch")
+            write(file, conf)
+
+def lxde(percent, icon, panel):
+    file = CONFIG / "lxsession/LXDE/desktop.conf"
+    conf = source(file, "/etc/xdg/lxsession/LXDE/desktop.conf")
+    # Preserve the existing font family where possible.
+    font = ini_get(conf, "GTK", "sGtk/FontName") or "Sans 10"
+    family = re.sub(r"\s+\d+(?:\.\d+)?$", "", font)
+    conf = ini_set(conf, "GTK", "sGtk/FontName", family + " " + str(round(10*percent/100)))
+    write(file, conf)
+    directory = CONFIG / "lxpanel/LXDE/panels"
+    files = sorted(directory.glob("*"))
+    if not files:
+        files = [directory / "panel"]
+    for file in files:
+        if file.is_dir() or file.name.endswith((".before-droi-ui", ".droi-tmp")):
+            continue
+        conf = source(file, "/etc/xdg/lxpanel/LXDE/panels/" + file.name)
+        # LXPanel uses brace-delimited blocks, not INI.
+        def adjust(match):
+            body = match.group(1)
+            for key, value in (("height", panel), ("iconsize", max(20, panel-8))):
+                expr = r"(?m)^(\s*" + key + r"\s*=\s*)\d+"
+                if re.search(expr, body):
+                    body = re.sub(expr, lambda m: m.group(1) + str(value), body)
+                else:
+                    body += "\n    " + key + "=" + str(value) + "\n"
+            return "Global {" + body + "}"
+        result, n = re.subn(r"Global\s*\{([^{}]*)\}", adjust, conf, count=1)
+        if n:
+            write(file, result)
+    pcmanfm("LXDE", icon)
+
+def icewm(percent, icon):
+    file = CONFIG / "icewm/preferences"
+    conf = source(file, "/etc/icewm/preferences", "/usr/share/icewm/preferences")
+    value = "TaskBarDoubleHeight=0"
+    expr = r"(?m)^\s*TaskBarDoubleHeight\s*=.*$"
+    conf = re.sub(expr, value, conf) if re.search(expr, conf) else conf.rstrip() + "\n" + value + "\n"
+    write(file, conf)
+    pcmanfm("droi-icewm", icon)
+
+def plasma(percent):
+    # Use the Wayland output's native scale, never a second Qt scale factor.
+    raw = run("kscreen-doctor", "-j")
+    if not raw:
+        return False
+    try:
+        outputs = json.loads(raw).get("outputs", [])
+        active = [o for o in outputs if o.get("enabled") and o.get("connected", True)]
+    except (ValueError, TypeError, AttributeError):
+        return False
+    if len(active) != 1:
+        return False
+    output = active[0]
+    if abs(float(output.get("scale", 1)) - percent / 100) < .01:
+        return True
+    result = run("kscreen-doctor", "output." + str(output["id"]) + ".scale." + str(percent/100))
+    return result is not None
+
+def main():
+    if len(sys.argv) != 4 or sys.argv[1] not in {"prepare", "plasma"}:
+        return 2
+    phase, desktop, value = sys.argv[1:]
+    percent = int(value) if value in {"100", "125", "150", "200"} else 150
+    dpi, icon, panel, dock = SIZES[percent]
+    wallpaper()
+    if phase == "plasma":
+        return 0 if plasma(percent) else 1
+    if desktop == "lxqt":
+        lxqt(percent, icon, panel)
+    elif desktop == "mate":
+        mate(percent, dpi, panel, icon)
+    elif desktop == "cinnamon":
+        cinnamon(percent, panel)
+    elif desktop == "lxde":
+        lxde(percent, icon, panel)
+    elif desktop == "icewm":
+        icewm(percent, icon)
+    elif desktop == "enlightenment":
+        # E's shell keeps its own theme/profile; don't edit its binary config.
+        # X11 DPI and Elementary scale are set by the session launcher.
+        pass
+    else:
+        return 2
+    log(f"{desktop}: {percent}% dpi={dpi}, icon target={icon}, panel target={panel}")
+    return 0
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        log("configuration not fully applied: " + str(e))
+        sys.exit(1)

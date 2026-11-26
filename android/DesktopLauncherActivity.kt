@@ -113,7 +113,7 @@ class DesktopLauncherActivity : ComponentActivity() {
                                         text = {
                                             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                                                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                if (selectedId != DroiDesktop.PLASMA.id) {
+                                                run {
                                                     Text("Taille de l’interface", style = MaterialTheme.typography.titleMedium)
                                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                         DroiDesktop.scales.forEach { scale ->
@@ -122,7 +122,7 @@ class DesktopLauncherActivity : ComponentActivity() {
                                                                 label = { Text("$scale %") })
                                                         }
                                                     }
-                                                    Text("150 % recommandé sur téléphone. Les jeux gardent leur résolution.",
+                                                    Text("150 % recommandé sur téléphone. La taille est adaptée au bureau.",
                                                         style = MaterialTheme.typography.bodySmall)
                                                 }
                                                 DroiDesktop.values().forEach { choice ->
