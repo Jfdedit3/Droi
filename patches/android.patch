@@ -452,7 +452,7 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
  
 -    private fun installThenStart(runtime: Boolean, desktop: Boolean, proton: Boolean = false, resume: Boolean = false) {
 +    private fun installThenStart(runtime: Boolean, desktop: Boolean, proton: Boolean = false, resume: Boolean = false,
-+                                 alternative: DroiDesktop? = null)
++                                 alternative: DroiDesktop? = null) {
          if (SessionState.stopRequested) return
          val worker = Any()
          activeInstallWorker = worker
