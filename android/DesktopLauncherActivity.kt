@@ -52,6 +52,9 @@ internal enum class DroiDesktop(val id: String, val label: String, val descripti
         fun select(context: Context, desktop: DroiDesktop) {
             context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE).edit()
                 .putString("environment", desktop.id).apply()
+            if (desktop == LXQT && LinuxRuntime.rootDir(context).isDirectory) {
+                runCatching { File(LinuxRuntime.rootDir(context), ".droi-preserve-lxqt").writeText("1\n") }
+            }
         }
     }
 }

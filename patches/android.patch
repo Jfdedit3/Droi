@@ -482,12 +482,13 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
                  if (activeInstallWorker === worker) SessionState.installing = "proton"
                  SessionEvents.transition(SessionPhase.INSTALLING_RUNTIME, "proton.installing", mapOf("component" to "proton"))
                  val protonProblem = installProton()
-@@ -2818,7 +2827,31 @@
+@@ -2818,7 +2827,32 @@
          return getString(R.string.session_runtime_install_failed)
      }
  
 -    private fun installDesktop(): String? {
 +    private fun installDroiDesktop(choice: DroiDesktop): String? {
++        if (choice == DroiDesktop.LXQT) File(LinuxRuntime.rootDir(this), ".droi-preserve-lxqt").writeText("1\n")
 +        if (choice.installed(this)) return null
 +        uiHandler.post {
 +            loading.percent = -1
@@ -515,3 +516,17 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
          uiHandler.post { loading.percent = -1; loading.say(getString(DESKTOP_LINES.downloading), DESKTOP_LINES.topic, readable = true) }
          val entry = com.droiddeck.launcher.runtime.DesktopCatalog.desktopEntry(this)
          val cancellation = com.droiddeck.launcher.core.Downloader.Cancellation { SessionState.stopRequested }
+diff --git a/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt b/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt
+--- a/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt
++++ b/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt
+@@ -26,6 +26,10 @@
+ 
+     fun cleanLegacy(context: Context, listener: LinuxRuntimeInstaller.ProgressListener? = null) {
+         val root = LinuxRuntime.rootDir(context)
++        // Droi supports LXQt as an independently selected desktop, not legacy migration debris.
++        if (File(root, ".droi-preserve-lxqt").isFile ||
++            com.droiddeck.launcher.DroiDesktop.selected(context) == com.droiddeck.launcher.DroiDesktop.LXQT
++        ) return
+         if (FileUtils.readString(File(root, CLEANED))?.trim() == "1") return
+         if (!File(root, CLEANING).exists() && !File(root, ".droiddeck-pkg-desktop").exists() && !File(root, "usr/bin/lxqt-session").exists()) return
+         listener?.onProgress(context.getString(R.string.desktop_cleaning_legacy), -1)

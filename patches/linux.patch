@@ -19,7 +19,7 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
-@@ -224,11 +227,59 @@
+@@ -224,11 +227,91 @@
  if ! /usr/local/bin/droiddeck-pipewire start; then
    echo "== pipewire: not running; screen capture has no picture"
  fi
@@ -31,52 +31,84 @@ index ee1e3a3..0438bde 100644
 +droi_alternative() (
 +  export XDG_SESSION_TYPE=x11 QT_QPA_PLATFORM=xcb GDK_BACKEND=x11 SDL_VIDEODRIVER=x11
 +  export MOZ_ENABLE_WAYLAND=0
-+  unset KDE_FULL_SESSION KDE_SESSION_VERSION KDE_APPLICATIONS_AS_SCOPE
++  unset KDE_FULL_SESSION KDE_SESSION_VERSION KDE_APPLICATIONS_AS_SCOPE SESSION_MANAGER
++  unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
++  unset MESA_LOADER_DRIVER_OVERRIDE LIBGL_KOPPER_DRI2
++  export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe QT_QUICK_BACKEND=software
 +  case "$1" in
-+    xfce) export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce; session=xfce4-session ;;
++    xfce) export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce; session=startxfce4 ;;
 +    lxqt) export XDG_CURRENT_DESKTOP=LXQt XDG_SESSION_DESKTOP=lxqt DESKTOP_SESSION=lxqt; session=startlxqt ;;
 +    *) exit 2 ;;
 +  esac
-+  command -v "$session" >/dev/null && command -v Xwayland >/dev/null && command -v xdpyinfo >/dev/null || exit 127
++  echo "== Droi: requested $1; session=$session; WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}"
++  for program in "$session" Xwayland xdpyinfo xauth mcookie dbus-run-session; do
++    command -v "$program" >/dev/null || { echo "== Droi: missing executable $program"; exit 127; }
++  done
++  if [ "$1" = lxqt ]; then
++    conf="${XDG_CONFIG_HOME:-$HOME/.config}/lxqt/session.conf"
++    if [ ! -e "$conf" ]; then
++      mkdir -p "$(dirname "$conf")" && printf '[General]\nwindow_manager=openbox\n' > "$conf"
++    fi
++  fi
 +  display=
 +  for n in 2 3 4 5 6 7 8 9; do
 +    if [ ! -e "/tmp/.X$n-lock" ] && [ ! -S "/tmp/.X11-unix/X$n" ]; then display=:$n; break; fi
 +  done
-+  [ -n "$display" ] || exit 1
++  [ -n "$display" ] || { echo "== Droi: no free X11 display"; exit 1; }
 +  export DISPLAY=$display
 +  export XAUTHORITY="$(mktemp "$XDG_RUNTIME_DIR/droi-xauth.XXXXXX")" || exit 1
 +  chmod 600 "$XAUTHORITY"
-+  xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$(mcookie)" || { rm -f "$XAUTHORITY"; exit 1; }
-+  Xwayland "$DISPLAY" -fullscreen -geometry "${DD_WIDTH:-1280}x${DD_HEIGHT:-720}" -shm -noreset -nolisten tcp -auth "$XAUTHORITY" &
-+  xpid=$!
-+  trap 'kill "$xpid" 2>/dev/null || true; wait "$xpid" 2>/dev/null || true; rm -f "$XAUTHORITY"' EXIT
-+  ready=0
-+  for n in $(seq 1 80); do
-+    kill -0 "$xpid" 2>/dev/null || exit 1
-+    if xdpyinfo >/dev/null 2>&1; then ready=1; break; fi
-+    sleep 0.1
-+  done
-+  [ "$ready" = 1 ] || exit 1
-+  echo "== droiddeck-desktop: $session on $DISPLAY"
++  xpid=
++  trap 'if [ -n "$xpid" ]; then kill "$xpid" 2>/dev/null || true; wait "$xpid" 2>/dev/null || true; fi; rm -f "$XAUTHORITY"' EXIT
++  cookie=$(mcookie) || exit 1
++  xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$cookie" || exit 1
++  unset cookie
++  # Avoid relying on optional fullscreen/geometry arguments on older Xwayland.
++  # First try rootful fullscreen; retry a plain rootful window if startup fails.
++  xwayland_ready() {
++    Xwayland "$DISPLAY" "$@" -shm -noreset -nolisten tcp -auth "$XAUTHORITY" &
++    xpid=$!
++    for n in $(seq 1 60); do
++      kill -0 "$xpid" 2>/dev/null || break
++      if timeout 2 xdpyinfo >/dev/null 2>&1; then return 0; fi
++      sleep 0.5
++    done
++    echo "== Droi: Xwayland failed or did not become ready ($DISPLAY)"
++    kill "$xpid" 2>/dev/null || true
++    wait "$xpid" 2>/dev/null || true
++    xpid=
++    return 1
++  }
++  if ! xwayland_ready -fullscreen -geometry "${DD_WIDTH:-1280}x${DD_HEIGHT:-720}"; then
++    echo "== Droi: retrying rootful Xwayland without fullscreen"
++    xwayland_ready || exit 69
++  fi
++  echo "== Droi: $session on $DISPLAY (Xwayland ready)"
 +  dbus-run-session -- "$session"
++  rc=$?
++  echo "== Droi: $session returned $rc"
++  exit "$rc"
 +)
 +
 +desktop_choice=${DROI_DESKTOP_ENV:-plasma}
 +if [ -n "${DD_BOTTOM_DESKTOP:-}" ]; then desktop_choice=plasma; fi
++echo "== Droi: selected desktop=$desktop_choice"
 +case "$desktop_choice" in
 +  xfce|lxqt)
 +    droi_alternative "$desktop_choice"
 +    rc=$?
 +    if [ "$rc" -ne 0 ]; then
-+      echo "== Droi: $desktop_choice failed ($rc); falling back to Plasma"
-+      dbus-run-session -- startplasma-wayland
-+      rc=$?
++      echo "== Droi: $desktop_choice failed ($rc); no automatic Plasma fallback"
 +    fi
 +    ;;
-+  *)
++  plasma)
 +    echo "== droiddeck-desktop: Plasma on $WAYLAND_DISPLAY"
 +    dbus-run-session -- startplasma-wayland
 +    rc=$?
++    ;;
++  *)
++    echo "== Droi: invalid desktop selection $desktop_choice"
++    rc=64
 +    ;;
 +esac
 +/usr/local/bin/droiddeck-pipewire stop

@@ -44,6 +44,9 @@ jobs:
       - name: Check patches before the APK build
         run: |
           git -C upstream apply --check ../patches/android.patch ../patches/linux.patch
+          git -C upstream apply ../patches/android.patch ../patches/linux.patch
+          bash -n upstream/tools/linuxfs/desktop/droiddeck-desktop
+          grep -Fq 'no automatic Plasma fallback' upstream/tools/linuxfs/desktop/droiddeck-desktop
 
   xbox:
     name: Prepare shared ARM64 runtime dependencies
