@@ -132,10 +132,10 @@ index 58e7e12..3640fc9 100644
          GpuClockPin.clearLeftover(this)
 diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
 new file mode 100644
-index 0000000..3201368
+index 0000000..1c7835e
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,176 @@
 +package com.droiddeck.launcher
 +
 +import androidx.activity.ComponentActivity
@@ -157,6 +157,8 @@ index 0000000..3201368
 +import com.droiddeck.launcher.session.SessionState
 +import android.os.Handler
 +import android.os.Looper
++import com.droiddeck.launcher.core.AddonPack
++import com.droiddeck.launcher.gpu.SystemVulkanDriver
 +import android.os.Bundle
 +import android.widget.Toast
 +import com.droiddeck.launcher.session.SessionService
@@ -185,6 +187,7 @@ index 0000000..3201368
 +                        } else if (tab == 1) {
 +                            DesktopComponents()
 +                        } else {
++                            XclipseSettings()
 +                            SettingsGroup("Mises à jour de Droi") {
 +                                MenuItem("Télécharger automatiquement les nouveaux APK", automatic) {
 +                                    automatic = !automatic
@@ -207,6 +210,27 @@ index 0000000..3201368
 +            }
 +        }
 +        DroiUpdates.check(this)
++    }
++
++    @Composable
++    private fun XclipseSettings() {
++        if (!remember { SystemVulkanDriver.isXclipse() }) return
++        val pack = AddonPack.POWERVR
++        val state by pack.state.collectAsState()
++        LaunchedEffect(Unit) { pack.refresh(this@DesktopLauncherActivity) }
++        SettingsGroup("Pilote Vulkan Samsung Xclipse") {
++            Text("Ce module permet à Ubuntu d’utiliser le pilote Vulkan Samsung du téléphone.")
++            when (val current = state) {
++                AddonPack.State.Ready -> Text("Module installé · disponible au lancement avec le pilote système")
++                is AddonPack.State.Downloading -> Text("Installation du module · ${(current.progress * 100).toInt()} %")
++                else -> {
++                    if (current == AddonPack.State.Failed) Text(pack.failure ?: "Le téléchargement a échoué.")
++                    Button(onClick = { pack.ensure(this@DesktopLauncherActivity) }) {
++                        Text(if (current == AddonPack.State.Failed) "Réessayer" else "Télécharger le module Vulkan")
++                    }
++                }
++            }
++        }
 +    }
 +
 +    @Composable
