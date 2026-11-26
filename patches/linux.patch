@@ -413,3 +413,13 @@ diff --git a/tools/release/runtime_inputs.py b/tools/release/runtime_inputs.py
      finally:
          process.stdout.close()
      if process.wait():
+@@ -232,6 +236,9 @@
+             for member in archive:
+                 if member.isfile():
+                     digests[member.name] = hashlib.sha256(archive.extractfile(member).read()).hexdigest()
++        # Finish reading the decompressor even after tarfile reaches its end marker.
++        while process.stdout.read(1024 * 1024):
++            pass
+     finally:
+         process.stdout.close()
+     if process.wait():
