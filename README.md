@@ -33,3 +33,7 @@ Le diagnostic vérifie statx sur un chemin et un descripteur, openat, lecture/é
 ## Sources et builds
 
 Le workflow principal récupère la révision DroidDeck d38fd373f0caf6574458abc574640f2d961d09d9, applique les patchs Android/Linux séparés, installe les sources Droi puis compile l'APK. Les scripts Linux, les deux classes Android propres à Droi et les tests sont maintenus en fichiers distincts. Le workflow de publication conserve le code de version monotone basé sur le numéro du build. Les anciens `desktop.patch`, `update.patch` et `build-rootfs.yml` concernent l'ancien chemin Debian/Fedora et ne sont pas utilisés par le workflow APK actuel ; ils sont conservés pour historique.
+
+## Programmes Windows
+
+Les EXE et MSI sont associés à Droi Wine / Proton dans KDE. Fermer Ubuntu pour installer ou choisir Proton dans Composants, puis redémarrer Ubuntu et double-cliquer dans Dolphin. En terminal : `droi-windows "/chemin/Programme.exe"`. `droi-windows --list` liste les moteurs détectés et `droi-windows --window "/chemin/Programme.exe"` utilise le mode fenêtre de compatibilité. Le lanceur réutilise les préfixes et options de DroidDeck ; Wine système sert de repli si aucun Proton utilisable n'est installé. Les titres Steam reconnus conservent leur chemin de lancement Steam. Aucun téléchargement de moteur n'est lancé par le gestionnaire Droi lui-même. Exécuter seulement des fichiers de confiance. La compatibilité x86/x64 dépend du moteur et des composants installés.

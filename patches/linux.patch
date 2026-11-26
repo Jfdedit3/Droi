@@ -11,6 +11,14 @@ index ee1e3a3..0438bde 100644
  cat > /usr/share/applications/droiddeck-steam-x64.desktop <<'ENTRY'
  [Desktop Entry]
  Type=Application
+@@ -156,6 +158,7 @@
+   ''|*/droiddeck-ime.desktop) kwriteconfig6 --file kwinrc --group Wayland --key InputMethod /usr/local/share/applications/droiddeck-ime.desktop ;;
+ esac
+ python3 /usr/local/bin/droiddeck-open --install 2>&1 | sed 's/^/[open] /'
++if [ -x /usr/bin/droi-windows ]; then /usr/bin/droi-windows --install; fi
+ export APPIMAGE_EXTRACT_AND_RUN=1
+ [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
+ desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 index c6ba899..2afda26 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
@@ -151,3 +159,51 @@ index 8c58423..c204009 100644
              self.assertEqual(actual_env["WINESERVER"], "/sync-pack/wineserver")
              self.assertEqual(actual_env["DD_SYNC_PACK"], "selected")
  
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-proton-run b/tools/linuxfs/overlay/usr/local/bin/droiddeck-proton-run
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-proton-run
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-proton-run
+@@ -100,6 +100,28 @@
+     return found
+ 
+ 
++def desktop_tools(root):
++    # Registered Valve wrappers do not mean a Proton depot is installed.
++    c = compat()
++    available = tools(root)
++    own = dict(c["OWN_TOOLS"])
++    return {name: entry for name, entry in available.items()
++            if name not in own or c["find_source"](root, own[name], runnable=True) is not None}
++
++
++def desktop_choice(root, available):
++    # Android can save the user's Proton choice before Steam is ever started.
++    c = compat()
++    state = c["read_json"](STATE)
++    request = c["read_json"](os.path.join(os.path.dirname(STATE), "request.json"))
++    if isinstance(request.get("seq"), int) and request["seq"] > (state.get("applied") or 0):
++        name = c["requested_tool"](request, c["tool_catalog"](root))
++        if name in available:
++            return name
++    default = state.get("default")
++    return default if default in available else None
++
++
+ def state_default():
+     try:
+         with open(STATE, encoding="utf-8") as f:
+@@ -515,8 +537,13 @@
+             target = fixed(program, root, prefix, compatdata)
+         else:
+             target = locate(program, root)
+-    available = tools(root)
+-    name, why = choose_tool(target.appid, mapping(root), available)
++    droi_launch = os.environ.get("DROI_WINDOWS_LAUNCH") == "1"
++    available = desktop_tools(root) if droi_launch else tools(root)
++    preferred = desktop_choice(root, available) if droi_launch else None
++    if preferred:
++        name, why = preferred, "the selected Droi Proton"
++    else:
++        name, why = choose_tool(target.appid, mapping(root), available)
+     if name is None:
+         say("no Proton is installed yet; open Steam once and it is downloaded for you")
+         return 69

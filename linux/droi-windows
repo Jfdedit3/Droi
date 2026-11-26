@@ -1,0 +1,107 @@
+#!/usr/bin/python3
+"""Launch trusted Windows files using Droi's installed compatibility tools."""
+import os
+from pathlib import Path
+import runpy
+import shutil
+import subprocess
+import sys
+
+PROTON = "/usr/local/bin/droiddeck-proton-run"
+OPEN = "/usr/local/bin/droiddeck-open"
+DESKTOP = "droi-windows.desktop"
+MIMES = ("application/x-ms-dos-executable", "application/x-msdownload",
+         "application/vnd.microsoft.portable-executable", "application/x-dosexec",
+         "application/x-msi")
+ENTRY = """[Desktop Entry]
+Type=Application
+Name=Droi - Wine / Proton
+Comment=Ouvrir un programme Windows avec le moteur installe
+Exec=/usr/bin/droi-windows %f
+Icon=application-x-ms-dos-executable
+Terminal=false
+Categories=Utility;
+MimeType=""" + ";".join(MIMES) + ";\n"
+
+
+def install():
+    directory = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "applications"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / DESKTOP).write_text(ENTRY, encoding="utf-8")
+    if shutil.which("update-desktop-database"):
+        subprocess.run(["update-desktop-database", str(directory)], check=False)
+    if not shutil.which("xdg-mime"):
+        raise RuntimeError("xdg-mime absent")
+    for mime in MIMES:
+        subprocess.run(["xdg-mime", "default", DESKTOP, mime], check=True)
+    for binary in ("kbuildsycoca6", "kbuildsycoca5"):
+        if shutil.which(binary):
+            subprocess.run([binary, "--noincremental"], check=False)
+            break
+    return 0
+
+
+def validate(path):
+    if not path.is_file():
+        raise ValueError("Fichier introuvable : " + str(path))
+    with path.open("rb") as source:
+        signature = source.read(8)
+    if path.suffix.lower() == ".exe" and signature.startswith(b"MZ"):
+        return
+    if path.suffix.lower() == ".msi" and signature == bytes.fromhex("D0CF11E0A1B11AE1"):
+        return
+    raise ValueError("Fichier Windows .exe ou .msi invalide : " + str(path))
+
+
+def installed():
+    module = runpy.run_path(PROTON)
+    root = os.environ.get("STEAM_COMPAT_CLIENT_INSTALL_PATH") or module["STEAM_ROOT"]
+    return module["desktop_tools"](root)
+
+
+def error(message):
+    print("Droi : " + message, file=sys.stderr)
+    if (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) and shutil.which("kdialog"):
+        subprocess.run(["kdialog", "--error", message], check=False)
+    return 1
+
+
+def main(args):
+    try:
+        if args == ["--install"]:
+            return install()
+        if args == ["--list"]:
+            for name in installed():
+                print(name)
+            wine = shutil.which("wine")
+            if wine:
+                print("Wine : " + wine)
+            return 0
+        window = bool(args and args[0] == "--window")
+        if window:
+            args = args[1:]
+        if args and args[0] == "--":
+            args = args[1:]
+        if not args:
+            raise ValueError("Usage : droi-windows [--window] FICHIER.exe [ARGUMENTS...]")
+        path = Path(args[0]).absolute()
+        validate(path)
+        env = os.environ.copy()
+        env["DROI_WINDOWS_LAUNCH"] = "1"
+        if installed():
+            command = [OPEN] + (["--window"] if window else []) + ["--", str(path), *args[1:]]
+        else:
+            wine = shutil.which("wine")
+            if not wine:
+                return error("Aucun Proton ou Wine installe. Ferme Ubuntu puis installe Proton dans Droi > Composants.")
+            if path.suffix.lower() == ".msi":
+                command = [wine, "msiexec", "/i", "Z:" + str(path).replace("/", "\\"), *args[1:]]
+            else:
+                command = [wine, str(path), *args[1:]]
+        return subprocess.call(command, cwd=str(path.parent), env=env)
+    except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+        return error(str(exc))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
