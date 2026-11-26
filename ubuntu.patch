@@ -604,6 +604,18 @@ index 2eed240..2c75580 100644
                  null
              }
          } catch (e: Exception) {
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
+index 4764e27..e8c1adc 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
+@@ -105,6 +105,7 @@ object SessionFiles {
+         GameEnvironmentStore.publish(context)
+         WinComponents.publish(context)
+         val files = arrayOf(
++            "usr/bin/opencode" to "usr/bin/opencode",
+             "usr/local/bin/droiddeck-game-env" to "usr/local/bin/droiddeck-game-env",
+             "usr/local/bin/droiddeck-game-debug" to "usr/local/bin/droiddeck-game-debug",
+             "usr/local/bin/droiddeck-game-gpu" to "usr/local/bin/droiddeck-game-gpu",
 diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
 index 9904584..d877c44 100644
 --- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
@@ -778,10 +790,10 @@ index 9bed7b6..4d49322 100644
 +    <cache-path name="droi_updates" path="droi-updates/" />
  </paths>
 diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/droiddeck-desktop
-index ee1e3a3..71c97b4 100644
+index ee1e3a3..d32b9ca 100644
 --- a/tools/linuxfs/desktop/droiddeck-desktop
 +++ b/tools/linuxfs/desktop/droiddeck-desktop
-@@ -180,6 +180,56 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
+@@ -180,6 +180,38 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
    export XDG_DATA_DIRS=/var/lib/snapd/desktop:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
    export PATH=$PATH:/snap/bin
  fi
@@ -816,28 +828,42 @@ index ee1e3a3..71c97b4 100644
 +    "${root_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 remove -y firefox
 +  fi
 +) >>"$HOME/.droi-browser-setup.log" 2>&1 &
-+(
-+  set -e
-+  mkdir -p "$HOME/.cache/droi"
-+  exec 8>"$HOME/.cache/droi/opencode-setup.lock"
-+  flock -n 8 || exit 0
-+  prefix=/usr/local
-+  [ -x "$prefix/bin/opencode" ] && "$prefix/bin/opencode" --version >/dev/null 2>&1 && exit 0
-+  root_cmd=()
-+  if [ "$(id -u)" != 0 ]; then root_cmd=(/usr/local/bin/droiddeck-root); fi
-+  "${root_cmd[@]}" bash -eu -c '
-+    export TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive
-+    if ! command -v npm >/dev/null || ! command -v node >/dev/null; then
-+      apt-get -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120 update
-+      apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends nodejs npm
-+    fi
-+    npm install --global --prefix /usr/local --include=optional --no-audit --no-fund opencode-ai
-+    /usr/local/bin/opencode --version
-+  '
-+) >>"$HOME/.droi-opencode-setup.log" 2>&1 &
++/usr/bin/opencode --version >>"$HOME/.droi-opencode-setup.log" 2>&1 &
  update-mime-database /usr/share/mime >/dev/null 2>&1 &
  [ -f /usr/share/icons/hicolor/icon-theme.cache ] || gtk-update-icon-cache -q -t /usr/share/icons/hicolor 2>/dev/null &
  [ -f /usr/share/glib-2.0/schemas/gschemas.compiled ] || glib-compile-schemas /usr/share/glib-2.0/schemas 2>/dev/null
+diff --git a/tools/linuxfs/overlay/usr/bin/opencode b/tools/linuxfs/overlay/usr/bin/opencode
+new file mode 100755
+index 0000000..6590221
+--- /dev/null
++++ b/tools/linuxfs/overlay/usr/bin/opencode
+@@ -0,0 +1,26 @@
++#!/bin/bash
++set -eu
++cli=/usr/local/bin/opencode
++setup() (
++    mkdir -p "$HOME/.cache/droi"
++    exec 8>"$HOME/.cache/droi/opencode-setup.lock"
++    flock 8
++    if [ -x "$cli" ] && "$cli" --version >/dev/null 2>&1; then return; fi
++    echo "Installation d’OpenCode via npm…" >&2
++    root_cmd=()
++    if [ "$(id -u)" != 0 ]; then root_cmd=(/usr/local/bin/droiddeck-root); fi
++    "${root_cmd[@]}" bash -eu -c '
++        export TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive
++        if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
++            apt-get -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120 update
++            apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends nodejs npm
++        fi
++        npm install --global --prefix /usr/local --include=optional --no-audit --no-fund opencode-ai
++        /usr/local/bin/opencode --version
++    '
++)
++if [ ! -x "$cli" ]; then
++    echo "Préparation d’OpenCode. Si une installation est en cours, cette commande attend sa fin." >&2
++    setup
++fi
++exec "$cli" "$@"
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 index c6ba899..2afda26 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
