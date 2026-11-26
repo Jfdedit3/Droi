@@ -18,15 +18,17 @@ HELP
 }
 shortcuts() {
   local dir="$HOME/.local/share/applications"
-  mkdir -p "$dir" /usr/local/bin
-  cat > /usr/local/bin/chatgpt <<'LAUNCH'
+  local bin=/usr/local/bin
+  if [ "$(id -u)" != 0 ]; then bin="$HOME/.local/bin"; fi
+  mkdir -p "$dir" "$bin"
+  cat > "$bin/chatgpt" <<'LAUNCH'
 #!/bin/bash
 set -eu
 if [ ! -x /usr/bin/chatgpt ]; then
   echo "ChatGPT Desktop absent. Utilise droi-apps install chatgpt VERSION SHA256." >&2
   exit 1
 fi
-export CODEX_HOME="$HOME/.codex"
+export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 mkdir -p "$CODEX_HOME"
 chmod 700 "$CODEX_HOME"
 if [ "$(id -u)" = 0 ]; then
@@ -42,12 +44,12 @@ if [ "$(id -u)" = 0 ]; then
 fi
 exec /usr/bin/chatgpt "$@"
 LAUNCH
-  chmod 0755 /usr/local/bin/chatgpt
-  cat > "$dir/droi-chatgpt.desktop" <<'ENTRY'
+  chmod 0755 "$bin/chatgpt"
+  cat > "$dir/droi-chatgpt.desktop" <<ENTRY
 [Desktop Entry]
 Type=Application
 Name=ChatGPT Desktop
-Exec=/usr/local/bin/chatgpt
+Exec="$bin/chatgpt"
 Icon=chatgpt
 Terminal=false
 Categories=Network;Office;

@@ -208,8 +208,11 @@ internal object DroiUpdates {
     private fun download(context: Context, release: Release): String {
         val target = apk(context, release.version)
         if (ready.value == release.version && target.isFile) {
-            verifyApk(context, target, release.version, release.digest)
-            return "Mise à jour prête."
+            if (runCatching { verifyApk(context, target, release.version, release.digest) }.isSuccess)
+                return "Mise à jour prête."
+            target.delete()
+            ready.value = 0
+            prefs(context).edit().remove("cached_version").remove("cached_digest").apply()
         }
         val folder = directory(context)
         check(folder.isDirectory || folder.mkdirs())

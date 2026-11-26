@@ -25,7 +25,8 @@ jobs:
       - name: Check guest scripts and run static ARM64 probe
         run: |
           set -euo pipefail
-          bash -n linux/droi-apps linux/droi-doctor
+          bash -n linux/droi-apps
+          bash -n linux/droi-doctor
           sh -n linux/opencode
           cc -O2 -static -Wall -Wextra -Werror tests/static-fs-probe.c -o /tmp/droi-static-probe
           DROI_PROBE=/tmp/droi-static-probe bash linux/droi-doctor
