@@ -790,10 +790,30 @@ index 9bed7b6..4d49322 100644
 +    <cache-path name="droi_updates" path="droi-updates/" />
  </paths>
 diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/droiddeck-desktop
-index ee1e3a3..d32b9ca 100644
+index ee1e3a3..9ceba50 100644
 --- a/tools/linuxfs/desktop/droiddeck-desktop
 +++ b/tools/linuxfs/desktop/droiddeck-desktop
-@@ -180,6 +180,38 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
+@@ -128,6 +128,19 @@ if [ -n "${LANGUAGE:-}" ]; then
+ else
+   kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE --delete
+ fi
++# Register the ChatGPT web app in the current Plasma user's application menu.
++apps_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
++mkdir -p "$apps_dir"
++cat > "$apps_dir/droi-chatgpt.desktop" <<'ENTRY'
++[Desktop Entry]
++Type=Application
++Name=ChatGPT
++Exec=brave-browser --app=https://chatgpt.com/
++TryExec=brave-browser
++Icon=web-browser
++Terminal=false
++Categories=Network;
++ENTRY
+ cat > /usr/share/applications/droiddeck-steam-x64.desktop <<'ENTRY'
+ [Desktop Entry]
+ Type=Application
+@@ -180,6 +193,38 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
    export XDG_DATA_DIRS=/var/lib/snapd/desktop:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
    export PATH=$PATH:/snap/bin
  fi
