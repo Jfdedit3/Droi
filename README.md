@@ -67,3 +67,7 @@ Le rapport de Droi 1053 montre que Xwayland échoue sur le lien physique /tmp/.X
 ### Huit interfaces Ubuntu
 
 Le sélecteur déroulant propose désormais KDE Plasma, XFCE, LXQt, MATE, Cinnamon (session de rendu logiciel), LXDE, Enlightenment et IceWM (gestionnaire de fenêtres avec PCManFM pour le bureau). Les sept alternatives passent par le serveur Xwayland authentifié avec -displayfd. APT installe les composants nécessaires à la demande ; aucun environnement existant n'est supprimé. Les cinq nouvelles interfaces sont expérimentales, en particulier Cinnamon et Enlightenment. La fermeture d'une session alternative ne relance plus Steam Big Picture. La validation CI vérifie que chaque identifiant du sélecteur possède une branche de lancement explicite.
+
+### Taille de l’interface X11
+
+Le menu Ubuntu propose 100, 125, 150 (par défaut) et 200 %. La préférence est transmise aux sessions X11 uniquement ; Qt, GTK, EFL et Xft reçoivent des réglages de taille au démarrage. Le framebuffer et la résolution des jeux ne sont pas modifiés. GTK utilise un facteur entier pour les éléments graphiques ; à 150 %, certains éléments sont donc agrandis à 200 % tandis que le texte suit le DPI demandé. Les panneaux GTK2 et les réglages propres aux bureaux peuvent ignorer ces paramètres. Plasma conserve son comportement d'origine. Le résultat doit être testé sur l'appareil.

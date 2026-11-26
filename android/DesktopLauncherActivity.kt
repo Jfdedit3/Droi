@@ -49,12 +49,22 @@ internal enum class DroiDesktop(val id: String, val label: String, val descripti
     fun installed(context: Context): Boolean {
         if (this == PLASMA) return com.droiddeck.launcher.runtime.DesktopCatalog.desktopInstalled(context)
         val root = LinuxRuntime.rootDir(context)
-        return (executables + listOf("Xwayland", "xdpyinfo", "xauth", "mcookie", "flock")).all {
+        return (executables + listOf("Xwayland", "xdpyinfo", "xauth", "mcookie", "flock", "xrdb")).all {
             File(root, "usr/bin/$it").isFile
         }
     }
 
     companion object {
+        val scales = listOf(100, 125, 150, 200)
+        fun scale(context: Context): Int =
+            context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE)
+                .getInt("scale", 150).takeIf { it in scales } ?: 150
+
+        fun selectScale(context: Context, scale: Int) {
+            if (scale in scales) context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE)
+                .edit().putInt("scale", scale).apply()
+        }
+
         fun selected(context: Context): DroiDesktop {
             val id = context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE).getString("environment", "plasma")
             return values().firstOrNull { it.id == id } ?: PLASMA
@@ -81,6 +91,7 @@ class DesktopLauncherActivity : ComponentActivity() {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 var desktopChoice by rememberSaveable { mutableStateOf(false) }
                 var selectedId by rememberSaveable { mutableStateOf(DroiDesktop.selected(this@DesktopLauncherActivity).id) }
+                var desktopScale by rememberSaveable { mutableIntStateOf(DroiDesktop.scale(this@DesktopLauncherActivity)) }
                 var automatic by remember { mutableStateOf(DroiUpdates.isEnabled(this)) }
                 androidx.activity.compose.BackHandler(enabled = tab != 0) { tab = 0 }
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -102,6 +113,18 @@ class DesktopLauncherActivity : ComponentActivity() {
                                         text = {
                                             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                                                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                if (selectedId != DroiDesktop.PLASMA.id) {
+                                                    Text("Taille de l’interface", style = MaterialTheme.typography.titleMedium)
+                                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        DroiDesktop.scales.forEach { scale ->
+                                                            FilterChip(selected = desktopScale == scale,
+                                                                onClick = { desktopScale = scale },
+                                                                label = { Text("$scale %") })
+                                                        }
+                                                    }
+                                                    Text("150 % recommandé sur téléphone. Les jeux gardent leur résolution.",
+                                                        style = MaterialTheme.typography.bodySmall)
+                                                }
                                                 DroiDesktop.values().forEach { choice ->
                                                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                                         RadioButton(selected = selectedId == choice.id, onClick = { selectedId = choice.id })
@@ -121,6 +144,7 @@ class DesktopLauncherActivity : ComponentActivity() {
                                                 val choice = DroiDesktop.values().firstOrNull { it.id == selectedId } ?: DroiDesktop.PLASMA
                                                 if (!SessionState.running && SessionState.installing == null) {
                                                     DroiDesktop.select(this@DesktopLauncherActivity, choice)
+                                                    DroiDesktop.selectScale(this@DesktopLauncherActivity, desktopScale)
                                                     desktopChoice = false
                                                     launchUbuntu()
                                                 } else {

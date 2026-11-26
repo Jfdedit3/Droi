@@ -19,7 +19,7 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
-@@ -224,11 +227,112 @@
+@@ -224,11 +227,126 @@
  if ! /usr/local/bin/droiddeck-pipewire start; then
    echo "== pipewire: not running; screen capture has no picture"
  fi
@@ -100,6 +100,20 @@ index ee1e3a3..0438bde 100644
 +    echo "== Droi: retrying rootful Xwayland without fullscreen"
 +    xwayland_ready || exit 69
 +  fi
++  # Scale the desktop toolkits, not the game framebuffer. Keep settings session-local.
++  case "${DROI_DESKTOP_SCALE:-150}" in
++    100) scale=1; dpi=96; gtk_scale=1; gtk_dpi=1 ;;
++    125) scale=1.25; dpi=120; gtk_scale=1; gtk_dpi=1 ;;
++    200) scale=2; dpi=192; gtk_scale=2; gtk_dpi=0.5 ;;
++    *) scale=1.5; dpi=144; gtk_scale=2; gtk_dpi=0.5 ;;
++  esac
++  export QT_SCALE_FACTOR="$scale" QT_FONT_DPI=96
++  export GDK_SCALE="$gtk_scale" GDK_DPI_SCALE="$gtk_dpi"
++  export ELM_SCALE="$scale"
++  if command -v xrdb >/dev/null; then
++    printf 'Xft.dpi: %s\n' "$dpi" | xrdb -merge || true
++  fi
++  echo "== Droi: desktop scale=$scale dpi=$dpi; X11 geometry unchanged"
 +  echo "== Droi: $session on $DISPLAY (Xwayland ready)"
 +  if [ "$1" = icewm ]; then
 +    dbus-run-session -- /bin/bash -c 'pcmanfm --desktop & exec icewm-session'

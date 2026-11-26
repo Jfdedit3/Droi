@@ -254,7 +254,7 @@ index 9904584..d877c44 100644
          }
  
          val networkLink = LinuxNetworkLinkComponent(this, root)
-@@ -989,8 +1006,9 @@
+@@ -989,8 +1006,10 @@
          guest.add("USER=root")
          guest.add("PATH=" + LinuxRuntime.GUEST_PATH)
          guest.add("TERM=xterm-256color")
@@ -262,6 +262,7 @@ index 9904584..d877c44 100644
 -            val appLocale = com.droiddeck.launcher.core.AppLanguage.effective(this)
 +        if (SessionState.mode == MODE_DESKTOP) {
 +            guest.add("DROI_DESKTOP_ENV=" + com.droiddeck.launcher.DroiDesktop.selected(this).id)
++            guest.add("DROI_DESKTOP_SCALE=" + com.droiddeck.launcher.DroiDesktop.scale(this))
 +            val appLocale = com.droiddeck.launcher.core.AppLanguage.effective(this)
              guest.add("LANG=" + DesktopLocale.lang(appLocale))
              DesktopLocale.language(appLocale)?.let { guest.add("LANGUAGE=$it") }
@@ -496,7 +497,7 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
 +        }
 +        val root = LinuxRuntime.rootDir(this)
 +        val packages = (choice.packages + listOf("Xwayland" to "xwayland", "xdpyinfo" to "x11-utils",
-+            "xauth" to "xauth", "mcookie" to "util-linux", "flock" to "util-linux").filterNot { File(root, "usr/bin/" + it.first).isFile }.map { it.second }).distinct()
++            "xauth" to "xauth", "mcookie" to "util-linux", "flock" to "util-linux", "xrdb" to "x11-xserver-utils").filterNot { File(root, "usr/bin/" + it.first).isFile }.map { it.second }).distinct()
 +        val command = listOf("/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "TMPDIR=/tmp", "/bin/bash", "-c",
 +            "apt-get update && apt-get install -y --no-install-recommends " + packages.joinToString(" "))
 +        return try {
