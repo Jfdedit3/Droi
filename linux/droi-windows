@@ -1,6 +1,9 @@
 #!/usr/bin/python3
 """Launch trusted Windows files using Droi's installed compatibility tools."""
 import os
+import hashlib
+import json
+import tempfile
 from pathlib import Path
 import runpy
 import shutil
@@ -10,6 +13,7 @@ import sys
 PROTON = "/usr/local/bin/droiddeck-proton-run"
 OPEN = "/usr/local/bin/droiddeck-open"
 DESKTOP = "droi-windows.desktop"
+GRAPHICS = ("auto", "performance", "compatibility")
 MIMES = ("application/x-ms-dos-executable", "application/x-msdownload",
          "application/vnd.microsoft.portable-executable", "application/x-dosexec",
          "application/x-msi")
@@ -28,6 +32,14 @@ def install():
     directory = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "applications"
     directory.mkdir(parents=True, exist_ok=True)
     (directory / DESKTOP).write_text(ENTRY, encoding="utf-8")
+    # Additional Open With entries allow a per-program choice from Dolphin.
+    for mode, label in (("performance", "Performance (Vulkan / Zink)"),
+                        ("compatibility", "Compatibilite (OpenGL logiciel)"),
+                        ("auto", "Automatique")):
+        body = ENTRY.replace("Name=Droi - Wine / Proton", "Name=Droi - " + label)
+        body = body.replace("Exec=/usr/bin/droi-windows %f",
+                            "Exec=/usr/bin/droi-windows --graphics " + mode + " %f")
+        (directory / ("droi-windows-" + mode + ".desktop")).write_text(body, encoding="utf-8")
     if shutil.which("update-desktop-database"):
         subprocess.run(["update-desktop-database", str(directory)], check=False)
     if not shutil.which("xdg-mime"):
@@ -51,6 +63,45 @@ def validate(path):
     if path.suffix.lower() == ".msi" and signature == bytes.fromhex("D0CF11E0A1B11AE1"):
         return
     raise ValueError("Fichier Windows .exe ou .msi invalide : " + str(path))
+
+
+def profile_file(path):
+    root = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+    key = hashlib.sha256(os.fsencode(path.resolve())).hexdigest()
+    return root / "droi/windows-profiles" / (key + ".json")
+
+
+def graphics_profile(path, selected=None):
+    record = profile_file(path)
+    if selected is not None:
+        if selected not in GRAPHICS:
+            raise ValueError("Mode graphique invalide : " + selected)
+        record.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=record.parent,
+                                         delete=False) as output:
+            tmp = Path(output.name)
+            json.dump({"graphics": selected}, output)
+        try:
+            os.replace(tmp, record)
+        finally:
+            tmp.unlink(missing_ok=True)
+    else:
+        try:
+            selected = json.loads(record.read_text(encoding="utf-8")).get("graphics")
+        except (OSError, ValueError, AttributeError):
+            selected = None
+    if selected not in GRAPHICS:
+        selected = "auto"
+    if selected == "auto":
+        return "compatibility" if path.name.casefold() == "geometrydash.exe" else "auto"
+    return selected
+
+
+def compatibility_env(env):
+    env.update(DROI_GRAPHICS_MODE="compatibility", DD_DESKTOP_GPU="off",
+               LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe",
+               MESA_LOADER_DRIVER_OVERRIDE="swrast")
+    env.pop("LIBGL_KOPPER_DRI2", None)
 
 
 def installed():
@@ -77,19 +128,37 @@ def main(args):
             if wine:
                 print("Wine : " + wine)
             return 0
-        window = bool(args and args[0] == "--window")
-        if window:
-            args = args[1:]
+        window = False
+        graphics = None
+        while args and args[0] in ("--window", "--graphics"):
+            option, args = args[0], args[1:]
+            if option == "--window":
+                window = True
+            else:
+                if not args or args[0] not in GRAPHICS:
+                    raise ValueError("Modes graphiques : auto, performance, compatibility")
+                graphics, args = args[0], args[1:]
         if args and args[0] == "--":
             args = args[1:]
         if not args:
-            raise ValueError("Usage : droi-windows [--window] FICHIER.exe [ARGUMENTS...]")
+            raise ValueError("Usage : droi-windows [--graphics auto|performance|compatibility] [--window] FICHIER.exe [ARGUMENTS...]")
         path = Path(args[0]).absolute()
         validate(path)
         env = os.environ.copy()
         env["DROI_WINDOWS_LAUNCH"] = "1"
+        mode = graphics_profile(path, graphics)
+        env["DROI_GRAPHICS_MODE"] = mode
+        if mode == "compatibility":
+            compatibility_env(env)
+        elif mode == "performance":
+            env["DD_DESKTOP_GPU"] = "on"
+            window = False
         if installed():
-            command = [OPEN] + (["--window"] if window else []) + ["--", str(path), *args[1:]]
+            if mode == "compatibility":
+                # Direct launch bypasses Gamescope, but keeps Proton's normal per-program prefix.
+                command = [PROTON, "--window", "--", str(path), *args[1:]]
+            else:
+                command = [OPEN] + (["--window"] if window else []) + ["--", str(path), *args[1:]]
         else:
             wine = shutil.which("wine")
             if not wine:

@@ -1,3 +1,4 @@
+import os
 import runpy
 import tempfile
 import unittest
@@ -19,6 +20,34 @@ class WindowsLauncherTests(unittest.TestCase):
                 self.assertEqual(call.call_args.args[0], [g["OPEN"], "--", str(exe), "--flag"])
                 self.assertEqual(call.call_args.kwargs["cwd"], tmp)
                 self.assertEqual(call.call_args.kwargs["env"]["DROI_WINDOWS_LAUNCH"], "1")
+
+    def test_geometry_dash_uses_compatibility_without_shared_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "GeometryDash.exe"
+            exe.write_bytes(b"MZ" + b"\0" * 64)
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}), \
+                 patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
+                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                self.assertEqual(main([str(exe)]), 0)
+                self.assertEqual(call.call_args.args[0], [g["PROTON"], "--window", "--", str(exe)])
+                env = call.call_args.kwargs["env"]
+                self.assertEqual(env["MESA_LOADER_DRIVER_OVERRIDE"], "swrast")
+                self.assertEqual(env["GALLIUM_DRIVER"], "llvmpipe")
+                self.assertEqual(env["DD_DESKTOP_GPU"], "off")
+                self.assertNotIn("--compatdata", call.call_args.args[0])
+                self.assertNotIn("--prefix", call.call_args.args[0])
+
+    def test_graphics_choice_persists_per_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "GeometryDash.exe"
+            other = Path(tmp) / "another.exe"
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}):
+                profile = g["graphics_profile"]
+                self.assertEqual(profile(a), "compatibility")
+                self.assertEqual(profile(a, "performance"), "performance")
+                self.assertEqual(profile(a), "performance")
+                self.assertEqual(profile(other), "auto")
+                self.assertEqual(profile(a, "auto"), "compatibility")
 
     def test_msi_wine_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

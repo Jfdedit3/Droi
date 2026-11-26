@@ -23,7 +23,35 @@ diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linu
 index c6ba899..2afda26 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 +++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
-@@ -1493,8 +1493,8 @@ def system_graphics_launch(command, env):
+@@ -1469,12 +1469,26 @@
+     pass
+ 
+ 
++def droi_software_gl(command, env):
++    mode = env.get("DROI_GRAPHICS_MODE", "auto")
++    program = env.get("DROIDDECK_DESKTOP_PROGRAM") or (command[2] if len(command) > 2 else "")
++    # An explicit performance choice always wins over the default game profile.
++    return mode == "compatibility" or (mode == "auto" and Path(program).name.casefold() == "geometrydash.exe")
++
++
++def droi_apply_software_gl(env):
++    result = dict(env, LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe",
++                  MESA_LOADER_DRIVER_OVERRIDE="swrast")
++    result.pop("LIBGL_KOPPER_DRI2", None)
++    return result
++
++
+ def system_graphics_launch(command, env):
+     """Use the APK's PowerVR compatibility files only for actual Proton game launches."""
+     runtime = env.get("DROIDDECK_POWERVR_RUNTIME")
+     if not runtime or not game_id(env) or len(command) < 3 or command[1] != "waitforexitandrun":
+-        return command, env
++        return command, droi_apply_software_gl(env) if droi_software_gl(command, env) else env
+     directory = Path(runtime)
+     if not directory.is_absolute():
+         raise SystemGraphicsError("system Vulkan runtime path is not absolute")
+     # run-proton.py picks the same payload by name; Xclipse needs a DXVK within 128 bytes of push data.
+@@ -1493,8 +1507,8 @@ def system_graphics_launch(command, env):
              if not path.is_file() or not path.stat().st_size:
                  raise SystemGraphicsError("missing system Vulkan component: %s" % name)
          wrapper = directory / "run-proton.py"
@@ -34,14 +62,16 @@ index c6ba899..2afda26 100755
      except OSError as error:
          raise SystemGraphicsError("system Vulkan component is unreadable: %s" % error) from error
      result = dict(env)
-@@ -1510,7 +1510,10 @@ def system_graphics_launch(command, env):
+@@ -1510,7 +1524,12 @@ def system_graphics_launch(command, env):
      })
      for name in ("DISABLE_WSI_LAYER", "PROTON_USE_WINED3D", "ENABLE_VK_LAYER_VALVE_steam_fossilize_1"):
          result.pop(name, None)
 -    return [str(wrapper), *command], result
-+    if game_id(env) == "678800" and "VK_LAYER_DROIDDECK_xclipse" in layers.split(":"):
-+        # SAS4 initializes Wine OpenGL before its game window. Zink fails on Xclipse.
-+        result.update(LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", MESA_LOADER_DRIVER_OVERRIDE="swrast")
++    if droi_software_gl(command, env):
++        # Reproduce the known-good OpenGL path without sharing another game's prefix.
++        result = droi_apply_software_gl(result)
++    elif game_id(env) == "678800" and "VK_LAYER_DROIDDECK_xclipse" in layers.split(":"):
++        result = droi_apply_software_gl(result)
 +    return ["/usr/bin/python3", str(wrapper), *command], result
  
  
