@@ -41,3 +41,7 @@ Les EXE et MSI sont associés à Droi Wine / Proton dans KDE. Fermer Ubuntu pour
 ### Profils graphiques Windows
 
 Geometry Dash utilise automatiquement le mode Compatibilite (llvmpipe, swrast), avec son propre préfixe normal. Le contournement SAS4 reste indépendant. Dans Dolphin, utiliser Ouvrir avec > Droi - Performance, Compatibilite ou Automatique pour enregistrer un profil par chemin d'exécutable. En terminal : `droi-windows --graphics compatibility "/chemin/jeu.exe"` (ou `performance`, `auto`). Le mode Compatibilite évite Gamescope et réapplique le rendu logiciel au dernier étage de lancement de Proton, y compris après la préparation du pont Vulkan. Le mode Automatique ne change pas les autres jeux. Aucun ancien préfixe n'est supprimé ni migré automatiquement ; la compatibilité réelle dépend de l'appareil.
+
+### Démarrage rapide
+
+Les lancements via Droi désactivent par défaut les traces Wine/Proton détaillées et conservent les erreurs. Pour un rapport complet : `droi-windows --debug "/chemin/jeu.exe"` ou Ouvrir avec > Droi - Diagnostic. La préparation facultative `droi-windows --prepare "/chemin/jeu.exe"` initialise le préfixe exact du jeu via Proton et cmd.exe, sans exécuter le jeu ni lancer Gamescope. Elle déplace le coût du premier lancement, ne le supprime pas. Les préfixes, caches et réglages graphiques sont conservés ; le contrôle des DLL et des composants reste actif. Le gain de temps doit être mesuré sur Android.

@@ -49,6 +49,37 @@ class WindowsLauncherTests(unittest.TestCase):
                 self.assertEqual(profile(other), "auto")
                 self.assertEqual(profile(a, "auto"), "compatibility")
 
+    def test_fast_launch_and_debug_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "test.exe"
+            exe.write_bytes(b"MZ")
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp, "PROTON_LOG": "1"}), \
+                 patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
+                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                self.assertEqual(main([str(exe)]), 0)
+                env = call.call_args.kwargs["env"]
+                self.assertEqual(env["DROI_FAST_LAUNCH"], "1")
+                self.assertEqual(env["DD_GAME_LOGS"], "0")
+                self.assertNotIn("PROTON_LOG", env)
+                self.assertEqual(env["WINEDEBUG"], "-all,err+all")
+                self.assertEqual(main(["--debug", str(exe)]), 0)
+                env = call.call_args.kwargs["env"]
+                self.assertEqual(env["DROI_FAST_LAUNCH"], "0")
+                self.assertEqual(env["DD_GAME_LOGS"], "1")
+
+    def test_prepare_uses_target_prefix_without_game_arguments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "game.exe"
+            exe.write_bytes(b"MZ")
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp, "DISPLAY": "", "WAYLAND_DISPLAY": ""}), \
+                 patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
+                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                self.assertEqual(main(["--prepare", str(exe)]), 0)
+                self.assertEqual(call.call_args.args[0], [g["PROTON"], "--window", "--", str(exe)])
+                env = call.call_args.kwargs["env"]
+                self.assertEqual(env["DROI_PREPARE_PREFIX"], "1")
+                self.assertEqual(env["DD_DESKTOP_GPU"], "off")
+
     def test_msi_wine_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
             msi = Path(tmp) / "setup.msi"

@@ -76,6 +76,32 @@ index c6ba899..2afda26 100755
  
  
  def game_logs(command, env, app_id, now=None):
+@@ -1519,2 +1538,4 @@
+     (DD_GAME_LOGS=1) on a GPU that is not an Adreno, or with Setup's "Detailed graphics logs"."""
++    if env.get("DROI_FAST_LAUNCH") == "1":
++        return env
+     if env.get("DD_GAME_LOGS") != "1" or not env.get("DD_DEBUG_DIR") or len(command) < 3 \
+@@ -1683,7 +1704,8 @@
+                 print("droiddeck-game-env: invalid configuration; using inherited environment", file=sys.stderr)
+         if waiting:
+             before_debug = env
+-            env = apply_game_debug_logs(env, config, debug_dir)
++            if env.get("DROI_FAST_LAUNCH") != "1":
++                env = apply_game_debug_logs(env, config, debug_dir)
+             if env is not before_debug:
+                 print("droiddeck-game-env: game debug logs enabled for this launch", file=sys.stderr)
+         if gl_default and env.get("vblank_mode") == "0":
+@@ -1691,4 +1713,10 @@
+     if app_id and len(command) > 1 and command[1] == "waitforexitandrun":
+         command = offline_without_anticheat(command, env)
++    if env.get("DROI_FAST_LAUNCH") == "1":
++        # Avoid Proton's heavy trace logging; keep errors and normal session logs.
++        env.pop("PROTON_LOG", None)
++        env["WINEDEBUG"] = "-all,err+all"
++        env["DXVK_LOG_LEVEL"] = "error"
++        env["VKD3D_DEBUG"] = "err"
+     env = game_logs(command, env, app_id)
+     if mic_enabled == "0":
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
 index bbacb76..01397ee 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
@@ -237,3 +263,17 @@ diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-proton-run b/tools/li
      if name is None:
          say("no Proton is installed yet; open Steam once and it is downloaded for you")
          return 69
+@@ -533,7 +560,12 @@
+     except OSError:
+         os.chdir(os.path.dirname(program))
+     entry = os.path.join(folder, command)
+-    os.execve(entry, [entry, verb] + arguments(program, args, desktop, target.compatdata), env)
++    if os.environ.get("DROI_PREPARE_PREFIX") == "1":
++        # Proton must initialize/update this exact target's prefix; do not launch its EXE.
++        env.pop("DROIDDECK_DESKTOP_PROGRAM", None)
++        env["DD_DESKTOP_GPU"] = "off"
++        os.execve(entry, [entry, VERB, "cmd.exe", "/c", "exit", "0"], env)
++    os.execve(entry, [entry, verb] + arguments(program, args, desktop, target.compatdata), env)
+ 
+ 
+ if __name__ == "__main__":
