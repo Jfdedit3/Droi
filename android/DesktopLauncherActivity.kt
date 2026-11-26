@@ -30,28 +30,18 @@ import com.droiddeck.launcher.session.SessionService
 
 internal enum class DroiDesktop(val id: String, val label: String, val description: String,
                                 val executables: List<String>, val packages: List<String>) {
-    PLASMA("plasma", "KDE Plasma", "Interface complète · Wayland", emptyList(), emptyList()),
-    XFCE("xfce", "XFCE", "Bureau léger · X11", listOf("xfce4-session", "xfwm4", "xfce4-panel", "xfdesktop", "thunar", "xfce4-terminal"),
-        listOf("xfce4", "xfce4-terminal")),
-    LXQT("lxqt", "LXQt", "Bureau léger · Qt / X11", listOf("startlxqt", "lxqt-session", "lxqt-panel", "pcmanfm-qt", "openbox", "qterminal"),
-        listOf("lxqt-core", "openbox", "qterminal")),
-    MATE("mate", "MATE", "Bureau classique · X11", listOf("mate-session", "marco", "mate-panel", "caja", "mate-terminal"),
-        listOf("mate-desktop-environment-core", "mate-terminal")),
-    CINNAMON("cinnamon", "Cinnamon", "Bureau moderne · rendu logiciel expérimental", listOf("cinnamon-session-cinnamon2d", "cinnamon", "nemo"),
-        listOf("cinnamon-core")),
-    LXDE("lxde", "LXDE", "Bureau GTK très léger · X11", listOf("startlxde", "lxsession", "lxpanel", "pcmanfm", "lxterminal", "openbox"),
-        listOf("lxde-core", "openbox-lxde-session", "lxterminal")),
-    ENLIGHTENMENT("enlightenment", "Enlightenment", "Bureau EFL · X11 expérimental", listOf("enlightenment_start", "enlightenment", "terminology"),
-        listOf("enlightenment", "terminology")),
-    ICEWM("icewm", "IceWM", "Gestionnaire de fenêtres minimaliste · X11", listOf("icewm-session", "icewm", "xterm", "pcmanfm"),
-        listOf("icewm", "xterm", "pcmanfm"));
+    DROI("droi", "Droi Desktop", "Interface personnalisée · X11",
+        listOf("openbox", "Xwayland", "xdpyinfo", "xauth", "mcookie", "flock", "xrdb", "xprop", "xterm"),
+        listOf("openbox", "python3-gi", "python3-gi-cairo", "gir1.2-gtk-3.0", "gir1.2-wnck-3.0",
+            "x11-utils", "x11-xserver-utils", "xterm", "xwayland", "xauth", "util-linux"));
 
     fun installed(context: Context): Boolean {
-        if (this == PLASMA) return com.droiddeck.launcher.runtime.DesktopCatalog.desktopInstalled(context)
         val root = LinuxRuntime.rootDir(context)
-        return (executables + listOf("Xwayland", "xdpyinfo", "xauth", "mcookie", "flock", "xrdb")).all {
-            File(root, "usr/bin/$it").isFile
-        }
+        val gi = File(root, "usr/lib/python3/dist-packages/gi")
+        val typelibs = File(root, "usr/lib/aarch64-linux-gnu/girepository-1.0")
+        return executables.all { File(root, "usr/bin/$it").isFile } &&
+            gi.isDirectory && listOf("Gtk-3.0.typelib", "Wnck-3.0.typelib").all { File(typelibs, it).isFile } &&
+            File(root, "usr/lib/python3/dist-packages/cairo").isDirectory
     }
 
     companion object {
@@ -65,17 +55,8 @@ internal enum class DroiDesktop(val id: String, val label: String, val descripti
                 .edit().putInt("scale", scale).apply()
         }
 
-        fun selected(context: Context): DroiDesktop {
-            val id = context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE).getString("environment", "plasma")
-            return values().firstOrNull { it.id == id } ?: PLASMA
-        }
-        fun select(context: Context, desktop: DroiDesktop) {
-            context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE).edit()
-                .putString("environment", desktop.id).apply()
-            if (desktop == LXQT && LinuxRuntime.rootDir(context).isDirectory) {
-                runCatching { File(LinuxRuntime.rootDir(context), ".droi-preserve-lxqt").writeText("1\n") }
-            }
-        }
+        fun selected(context: Context): DroiDesktop = DROI
+
     }
 }
 
@@ -90,7 +71,6 @@ class DesktopLauncherActivity : ComponentActivity() {
             DroidDeckTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 var desktopChoice by rememberSaveable { mutableStateOf(false) }
-                var selectedId by rememberSaveable { mutableStateOf(DroiDesktop.selected(this@DesktopLauncherActivity).id) }
                 var desktopScale by rememberSaveable { mutableIntStateOf(DroiDesktop.scale(this@DesktopLauncherActivity)) }
                 var automatic by remember { mutableStateOf(DroiUpdates.isEnabled(this)) }
                 androidx.activity.compose.BackHandler(enabled = tab != 0) { tab = 0 }
@@ -101,15 +81,14 @@ class DesktopLauncherActivity : ComponentActivity() {
                         TabStrip(listOf("Bureaux", "Composants", "Paramètres"), tab, { tab = it })
                         if (tab == 0) {
                             SettingsGroup("Bureaux Linux") {
-                                val selected = DroiDesktop.selected(this@DesktopLauncherActivity)
-                                MenuItem("Ubuntu", false, detail = selected.label) {
+                                MenuItem("Ubuntu", false, detail = "Droi Desktop") {
                                     if (SessionState.running) launchUbuntu() else desktopChoice = true
                                 }
-                                Text("Choisis ton environnement de bureau avant le lancement.")
+                                Text("Bureau Droi : menu Démarrer, recherche et barre des tâches centrée.")
                                 if (desktopChoice) {
                                     AlertDialog(
                                         onDismissRequest = { desktopChoice = false },
-                                        title = { Text("Interface Ubuntu") },
+                                        title = { Text("Lancer Droi Desktop") },
                                         text = {
                                             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                                                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -125,25 +104,14 @@ class DesktopLauncherActivity : ComponentActivity() {
                                                     Text("150 % recommandé sur téléphone. La taille est adaptée au bureau.",
                                                         style = MaterialTheme.typography.bodySmall)
                                                 }
-                                                DroiDesktop.values().forEach { choice ->
-                                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                                        RadioButton(selected = selectedId == choice.id, onClick = { selectedId = choice.id })
-                                                        Column(Modifier.weight(1f)) {
-                                                            Text(choice.label, style = MaterialTheme.typography.titleMedium)
-                                                            Text(choice.description, style = MaterialTheme.typography.bodySmall)
-                                                            Text(if (choice.installed(this@DesktopLauncherActivity)) "Installé" else "Installation au premier lancement",
-                                                                style = MaterialTheme.typography.bodySmall)
-                                                        }
-                                                    }
-                                                }
+                                                Text(if (DroiDesktop.DROI.installed(this@DesktopLauncherActivity))
+                                                    "Bureau prêt" else "Installation des composants au premier lancement")
                                                 Text("Tes fichiers, applications et préfixes Wine sont conservés.", style = MaterialTheme.typography.bodySmall)
                                             }
                                         },
                                         confirmButton = {
                                             Button(onClick = {
-                                                val choice = DroiDesktop.values().firstOrNull { it.id == selectedId } ?: DroiDesktop.PLASMA
                                                 if (!SessionState.running && SessionState.installing == null) {
-                                                    DroiDesktop.select(this@DesktopLauncherActivity, choice)
                                                     DroiDesktop.selectScale(this@DesktopLauncherActivity, desktopScale)
                                                     desktopChoice = false
                                                     launchUbuntu()

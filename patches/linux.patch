@@ -19,7 +19,7 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
-@@ -224,11 +227,132 @@
+@@ -224,13 +227,81 @@
  if ! /usr/local/bin/droiddeck-pipewire start; then
    echo "== pipewire: not running; screen capture has no picture"
  fi
@@ -28,33 +28,23 @@ index ee1e3a3..0438bde 100644
 -rc=$?
 -/usr/local/bin/droiddeck-pipewire stop
 -echo "== droiddeck-desktop: Plasma ended ($rc)"
-+droi_alternative() (
+-if [ "$rc" -eq 0 ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
+-  /usr/local/bin/droiddeck-steam-launch bigpicture
+-  sleep 30
+-fi
+-exit $rc
++droi_shell() (
 +  export XDG_SESSION_TYPE=x11 QT_QPA_PLATFORM=xcb GDK_BACKEND=x11 SDL_VIDEODRIVER=x11
 +  export MOZ_ENABLE_WAYLAND=0
 +  unset KDE_FULL_SESSION KDE_SESSION_VERSION KDE_APPLICATIONS_AS_SCOPE SESSION_MANAGER
 +  unset DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
 +  unset MESA_LOADER_DRIVER_OVERRIDE LIBGL_KOPPER_DRI2
 +  export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe QT_QUICK_BACKEND=software
-+  case "$1" in
-+    xfce) export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce; session=startxfce4 ;;
-+    lxqt) export XDG_CURRENT_DESKTOP=LXQt XDG_SESSION_DESKTOP=lxqt DESKTOP_SESSION=lxqt; session=startlxqt ;;
-+    mate) export XDG_CURRENT_DESKTOP=MATE XDG_SESSION_DESKTOP=mate DESKTOP_SESSION=mate; session=mate-session ;;
-+    cinnamon) export XDG_CURRENT_DESKTOP=X-Cinnamon XDG_SESSION_DESKTOP=cinnamon DESKTOP_SESSION=cinnamon; session=cinnamon-session-cinnamon2d ;;
-+    lxde) export XDG_CURRENT_DESKTOP=LXDE XDG_SESSION_DESKTOP=lxde DESKTOP_SESSION=lxde; session=startlxde ;;
-+    enlightenment) export XDG_CURRENT_DESKTOP=Enlightenment XDG_SESSION_DESKTOP=enlightenment DESKTOP_SESSION=enlightenment; session=enlightenment_start ;;
-+    icewm) export XDG_CURRENT_DESKTOP=ICEWM XDG_SESSION_DESKTOP=icewm DESKTOP_SESSION=icewm; session=icewm-session ;;
-+    *) exit 2 ;;
-+  esac
-+  echo "== Droi: requested $1; session=$session; WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}"
-+  for program in "$session" Xwayland xdpyinfo xauth mcookie dbus-run-session flock; do
++  export XDG_CURRENT_DESKTOP=Droi XDG_SESSION_DESKTOP=droi DESKTOP_SESSION=droi
++  export DROI_DESKTOP_ENV=droi
++  for program in openbox Xwayland xdpyinfo xauth mcookie dbus-run-session flock /usr/bin/droi-shell; do
 +    command -v "$program" >/dev/null || { echo "== Droi: missing executable $program"; exit 127; }
 +  done
-+  if [ "$1" = lxqt ]; then
-+    conf="${XDG_CONFIG_HOME:-$HOME/.config}/lxqt/session.conf"
-+    if [ ! -e "$conf" ]; then
-+      mkdir -p "$(dirname "$conf")" && printf '[General]\nwindow_manager=openbox\n' > "$conf"
-+    fi
-+  fi
 +  display=
 +  for n in 2 3 4 5 6 7 8 9; do
 +    if [ -e "/tmp/.X$n-lock" ] || [ -S "/tmp/.X11-unix/X$n" ]; then continue; fi
@@ -100,7 +90,7 @@ index ee1e3a3..0438bde 100644
 +    echo "== Droi: retrying rootful Xwayland without fullscreen"
 +    xwayland_ready || exit 69
 +  fi
-+  # Scale the desktop toolkits, not the game framebuffer. Keep settings session-local.
++  # The custom shell controls its own dimensions; apps use native X11 DPI.
 +  case "${DROI_DESKTOP_SCALE:-150}" in
 +    100) scale=1; dpi=96 ;;
 +    125) scale=1.25; dpi=120 ;;
@@ -109,55 +99,18 @@ index ee1e3a3..0438bde 100644
 +  esac
 +  export QT_SCALE_FACTOR="$scale" QT_FONT_DPI=96 QT_SCREEN_SCALE_FACTORS=1
 +  export GDK_SCALE=1 GDK_DPI_SCALE=1
-+  # Set X11 physical DPI without switching the framebuffer mode.
-+  if command -v xrandr >/dev/null; then xrandr --dpi "$dpi" 2>/dev/null || true; fi
-+  export ELM_SCALE="$scale"
 +  if command -v xrdb >/dev/null; then
 +    printf 'Xft.dpi: %s\n' "$dpi" | xrdb -merge || true
 +  fi
-+  echo "== Droi: desktop scale=$scale dpi=$dpi; X11 geometry unchanged"
-+  echo "== Droi: $session on $DISPLAY (Xwayland ready)"
-+  if [ "$1" = xfce ]; then
-+    dbus-run-session -- /usr/bin/droi-xfce
-+  else
-+    dbus-run-session -- /usr/bin/droi-desktop-ui "$1" "$session"
-+  fi
-+  rc=$?
-+  echo "== Droi: $session returned $rc"
-+  exit "$rc"
++  echo "== Droi: custom shell on $DISPLAY (Xwayland ready)"
++  dbus-run-session -- /usr/bin/droi-shell-session
 +)
 +
-+desktop_choice=${DROI_DESKTOP_ENV:-plasma}
-+if [ -n "${DD_BOTTOM_DESKTOP:-}" ]; then desktop_choice=plasma; fi
-+echo "== Droi: selected desktop=$desktop_choice"
-+case "$desktop_choice" in
-+  xfce|lxqt|mate|cinnamon|lxde|enlightenment|icewm)
-+    droi_alternative "$desktop_choice"
-+    rc=$?
-+    if [ "$rc" -ne 0 ]; then
-+      echo "== Droi: $desktop_choice failed ($rc); no automatic Plasma fallback"
-+    fi
-+    ;;
-+  plasma)
-+    echo "== droiddeck-desktop: Plasma on $WAYLAND_DISPLAY"
-+    if [ -n "${DD_BOTTOM_DESKTOP:-}" ]; then
-+      dbus-run-session -- startplasma-wayland
-+    else
-+      dbus-run-session -- /usr/bin/droi-desktop-ui plasma startplasma-wayland
-+    fi
-+    rc=$?
-+    ;;
-+  *)
-+    echo "== Droi: invalid desktop selection $desktop_choice"
-+    rc=64
-+    ;;
-+esac
++droi_shell
++rc=$?
 +/usr/local/bin/droiddeck-pipewire stop
-+echo "== droiddeck-desktop: $desktop_choice ended ($rc)"
--if [ "$rc" -eq 0 ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
-+if [ "$rc" -eq 0 ] && [ "$desktop_choice" = plasma ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
-   /usr/local/bin/droiddeck-steam-launch bigpicture
-   sleep 30
++echo "== Droi Desktop ended ($rc)"
++exit $rc
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 index c6ba899..2afda26 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env

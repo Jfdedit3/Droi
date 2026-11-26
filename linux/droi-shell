@@ -1,0 +1,250 @@
+#!/usr/bin/python3
+"""Droi's independent X11 desktop shell, with an EWMH window manager."""
+import os
+import sys
+import shutil
+import subprocess
+import datetime
+from pathlib import Path
+import math
+
+def scale_value(value):
+    return int(value) if str(value) in {"100","125","150","200"} else 150
+
+def metrics(width, height, percent):
+    s = percent / 100
+    # Reserve enough room for the start menu even at 720p and 200%.
+    return {"bar": min(68, max(42, round(40*s))),
+            "icon": min(36, max(22, round(22*s))),
+            "menu_w": min(width-24, max(300, round(460*s))),
+            "menu_h": min(height-90, max(280, round(360*s)))}
+
+def matches(name, description, query):
+    return all(word in (name+" "+description).casefold() for word in query.casefold().split())
+
+def main():
+    import gi
+    gi.require_version("Gtk","3.0")
+    gi.require_version("Gdk","3.0")
+    gi.require_version("Wnck","3.0")
+    gi.require_version("GdkX11","3.0")
+    from gi.repository import Gtk, Gdk, GdkX11, Gio, GLib, Wnck
+    import cairo
+    screen=Gdk.Screen.get_default()
+    if screen is None:
+        return 1
+    width,height=screen.get_width(),screen.get_height()
+    percent=scale_value(os.environ.get("DROI_DESKTOP_SCALE",150))
+    m=metrics(width,height,percent)
+    bar_h,icon=m["bar"],m["icon"]
+    theme=Gtk.Settings.get_default()
+    if theme:
+        theme.set_property("gtk-application-prefer-dark-theme",False)
+        theme.set_property("gtk-theme-name","Adwaita")
+    css=Gtk.CssProvider()
+    css.load_from_data(b"""
+      #taskbar {background: #eaf2fd; border-top: 1px solid #aabed7;}
+      #start-menu {background: #edf4ff; border: 1px solid #aabed7; border-radius: 12px;}
+      #start-menu button, #taskbar button {background-image:none; border:0; box-shadow:none; background-color:transparent; border-radius:7px; padding:5px; color:#182b45;}
+      #start-menu button:hover, #taskbar button:hover {background-color:#d0e0f6;}
+      #taskbar button.active {background-color:#c6dbf7; border-bottom:3px solid #2478dc;}
+      #start-menu entry {background:#fff; border:1px solid #b7c8df; border-radius:6px; padding:8px;}
+      #start-menu label, #taskbar label {color:#192c46;}
+    """)
+    Gtk.StyleContext.add_provider_for_screen(screen,css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    def window(hint, name, w,h,x,y):
+        win=Gtk.Window()
+        win.set_name(name)
+        win.set_decorated(False)
+        win.set_resizable(False)
+        win.set_skip_taskbar_hint(True)
+        win.set_skip_pager_hint(True)
+        win.set_type_hint(hint)
+        win.set_default_size(w,h)
+        win.move(x,y)
+        return win
+    bg=window(Gdk.WindowTypeHint.DESKTOP,"desktop",width,height,0,0)
+    bg.set_keep_below(True)
+    bg.set_accept_focus(False)
+    canvas=Gtk.DrawingArea()
+    def draw(widget,cr):
+        w,h=widget.get_allocated_width(),widget.get_allocated_height()
+        cr.scale(w,h)
+        grad=cairo.LinearGradient(0,0,1,1)
+        grad.add_color_stop_rgb(0,.67,.81,.94)
+        grad.add_color_stop_rgb(1,.08,.23,.54)
+        cr.set_source(grad);cr.paint()
+        # Original abstract blue ribbon wallpaper, not a Windows asset.
+        for n in range(9):
+            t=n/9
+            cr.move_to(-.12,.88+t*.07)
+            cr.curve_to(.12,.16-t*.12,.62,-.20+t*.07,.93,.23+t*.08)
+            cr.curve_to(1.17,.60,.63,.66+t*.07,.28,.98)
+            cr.curve_to(.08,1.14,-.15,1.1,-.12,.88+t*.07)
+            g=cairo.LinearGradient(.1,.1,.9,.9)
+            g.add_color_stop_rgba(0,.05,.68,1,.85)
+            g.add_color_stop_rgba(.55,.08,.34,.90,.95)
+            g.add_color_stop_rgba(1,.02,.12,.46,.95)
+            cr.set_source(g);cr.fill()
+        return False
+    canvas.connect("draw",draw)
+    bg.add(canvas);bg.show_all()
+    bar=window(Gdk.WindowTypeHint.DOCK,"taskbar",width,bar_h,0,height-bar_h)
+    bar.set_keep_above(True);bar.set_accept_focus(False)
+    outer=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=6)
+    outer.set_margin_start(10);outer.set_margin_end(10)
+    center=Gtk.Box(spacing=5);tasks=Gtk.Box(spacing=3)
+    right=Gtk.Box(spacing=8)
+    outer.set_center_widget(center);outer.pack_end(right,False,False,0)
+    bar.add(outer)
+    menu=window(Gdk.WindowTypeHint.DIALOG,"start-menu",m["menu_w"],m["menu_h"],
+                (width-m["menu_w"])//2,height-bar_h-m["menu_h"]-8)
+    menu.set_keep_above(True)
+    menu.connect("delete-event",lambda *a: (menu.hide(),True)[1])
+    content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10)
+    content.set_border_width(16);menu.add(content)
+    search=Gtk.SearchEntry();search.set_placeholder_text("Rechercher une application")
+    content.pack_start(search,False,False,0)
+    headline=Gtk.Label(label="Applications épinglées");headline.set_xalign(0)
+    content.pack_start(headline,False,False,0)
+    pinned=Gtk.FlowBox();pinned.set_selection_mode(Gtk.SelectionMode.NONE)
+    pinned.set_max_children_per_line(5);pinned.set_min_children_per_line(3)
+    pinned.set_row_spacing(6);pinned.set_column_spacing(6)
+    content.pack_start(pinned,False,False,0)
+    label=Gtk.Label(label="Toutes les applications");label.set_xalign(0);content.pack_start(label,False,False,0)
+    scroll=Gtk.ScrolledWindow();scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
+    grid=Gtk.FlowBox();grid.set_selection_mode(Gtk.SelectionMode.NONE)
+    grid.set_min_children_per_line(3);grid.set_max_children_per_line(5)
+    grid.set_row_spacing(5);grid.set_column_spacing(5)
+    scroll.add(grid);content.pack_start(scroll,True,True,0)
+    footer=Gtk.Box(spacing=8);content.pack_end(footer,False,False,0)
+    footer.pack_start(Gtk.Label(label="●  Ubuntu • Droi"),False,False,0)
+    def launch(argv):
+        menu.hide()
+        try:
+            subprocess.Popen(argv,start_new_session=True)
+        except OSError as e:
+            dialog=Gtk.MessageDialog(transient_for=bar,modal=True,message_type=Gtk.MessageType.ERROR,buttons=Gtk.ButtonsType.CLOSE,text=str(e))
+            dialog.run();dialog.destroy()
+    def choose(*commands):
+        for command in commands:
+            if shutil.which(command): return command
+        return None
+    def image(name,size=icon):
+        im=Gtk.Image.new_from_icon_name(name,Gtk.IconSize.DIALOG)
+        im.set_pixel_size(size);return im
+    def button(name,ico,action,caption=False):
+        b=Gtk.Button();box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL if caption else Gtk.Orientation.HORIZONTAL,spacing=4)
+        box.pack_start(image(ico),False,False,0)
+        if caption:
+            lb=Gtk.Label(label=name);lb.set_max_width_chars(15);lb.set_ellipsize(3);box.pack_start(lb,False,False,0)
+        b.add(box);b.set_tooltip_text(name);b.connect("clicked",lambda *_: action())
+        return b
+    def open_cmd(*argv): launch(list(argv))
+    files=choose("dolphin","thunar","pcmanfm-qt","pcmanfm")
+    terminal=choose("konsole","xfce4-terminal","qterminal","xterm")
+    browser=choose("brave-browser","brave","firefox","chromium")
+    favourites=[]
+    if files: favourites.append(("Fichiers","system-file-manager",lambda: open_cmd(files,str(Path.home()))))
+    if terminal: favourites.append(("Terminal","utilities-terminal",lambda: open_cmd(terminal)))
+    if browser: favourites.append(("Navigateur","web-browser",lambda: open_cmd(browser)))
+    if shutil.which("droiddeck-steam-launch"): favourites.append(("Steam","steam",lambda: open_cmd("droiddeck-steam-launch","desktop")))
+    if shutil.which("chatgpt"): favourites.append(("ChatGPT","applications-internet",lambda: open_cmd("chatgpt","--no-sandbox")))
+    if shutil.which("droi-windows"): favourites.append(("Processus Wine","application-x-executable",lambda: open_cmd("droi-windows","--wine-manager")))
+    def rebuild_apps(*_):
+        for child in grid.get_children(): grid.remove(child)
+        query=search.get_text()
+        apps=sorted(Gio.AppInfo.get_all(),key=lambda a:a.get_display_name().casefold())
+        seen=set()
+        for app in apps:
+            name=app.get_display_name()
+            if not app.should_show() or not matches(name,app.get_description() or "",query): continue
+            ident=app.get_id() or name
+            if ident in seen: continue
+            seen.add(ident)
+            btn=Gtk.Button(); vb=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=4)
+            gicon=app.get_icon()
+            im=Gtk.Image.new_from_gicon(gicon,Gtk.IconSize.DIALOG) if gicon else image("application-x-executable")
+            im.set_pixel_size(icon);vb.pack_start(im,False,False,0)
+            lb=Gtk.Label(label=name);lb.set_max_width_chars(14);lb.set_ellipsize(3);vb.pack_start(lb,False,False,0)
+            btn.add(vb);btn.set_tooltip_text(name)
+            def start(_btn,app=app):
+                menu.hide()
+                try: app.launch([],None)
+                except GLib.Error as e: print("Droi: application launch failed",e,flush=True)
+            btn.connect("clicked",start);grid.add(btn)
+        grid.show_all()
+    search.connect("search-changed",rebuild_apps)
+    def toggle_menu():
+        if menu.get_visible(): menu.hide();return
+        search.set_text("")
+        for c in pinned.get_children(): pinned.remove(c)
+        for name,ico,action in favourites: pinned.add(button(name,ico,action,True))
+        rebuild_apps();menu.show_all()
+        menu.move((width-m["menu_w"])//2,height-bar_h-m["menu_h"]-8)
+        menu.present();search.grab_focus()
+    def key(_win,event):
+        if event.keyval==Gdk.KEY_Escape: menu.hide();return True
+        return False
+    menu.connect("key-press-event",key)
+    def quit_session():
+        dialog=Gtk.MessageDialog(transient_for=menu,modal=True,message_type=Gtk.MessageType.QUESTION,buttons=Gtk.ButtonsType.YES_NO,text="Fermer la session Ubuntu ?")
+        dialog.format_secondary_text("Enregistre ton travail avant de quitter.")
+        response=dialog.run();dialog.destroy()
+        if response==Gtk.ResponseType.YES: Gtk.main_quit()
+    footer.pack_end(button("Quitter Ubuntu","system-shutdown",quit_session),False,False,0)
+    # Start icon is drawn independently from the installed theme.
+    start=Gtk.Button();start.set_tooltip_text("Démarrer")
+    squares=Gtk.DrawingArea();squares.set_size_request(icon,icon)
+    def logo(w,cr):
+        n=w.get_allocated_width();sz=(n-3)/2
+        cr.set_source_rgb(.06,.42,.84)
+        for x in (0,sz+3):
+            for y in (0,sz+3): cr.rectangle(x,y,sz,sz)
+        cr.fill();return False
+    squares.connect("draw",logo);start.add(squares);start.connect("clicked",lambda *_:toggle_menu())
+    center.pack_start(start,False,False,0)
+    center.pack_start(button("Rechercher","system-search",toggle_menu),False,False,0)
+    for name,ico,action in favourites[:4]: center.pack_start(button(name,ico,action),False,False,0)
+    center.pack_start(tasks,False,False,0)
+    clock=Gtk.Label();right.pack_start(clock,False,False,0)
+    def update_clock():
+        clock.set_text(datetime.datetime.now().strftime("%H:%M\n%d/%m/%Y"));return True
+    update_clock();GLib.timeout_add_seconds(30,update_clock)
+    right.pack_start(button("Afficher le bureau","user-desktop",lambda: ws.toggle_showing_desktop(not ws.get_showing_desktop())),False,False,0)
+    Wnck.set_client_type(Wnck.ClientType.PAGER)
+    ws=Wnck.Screen.get_default()
+    def rebuild_tasks(*_):
+        for child in tasks.get_children(): tasks.remove(child)
+        active=ws.get_active_window()
+        for win in [x for x in ws.get_windows() if not x.is_skip_tasklist() and x.get_window_type() in (Wnck.WindowType.NORMAL,Wnck.WindowType.DIALOG)][:8]:
+            btn=Gtk.Button();btn.set_tooltip_text(win.get_name())
+            pix=win.get_icon()
+            im=Gtk.Image.new_from_pixbuf(pix.scale_simple(icon,icon,2)) if pix else image("application-x-executable")
+            btn.add(im)
+            if active and win.get_xid()==active.get_xid(): btn.get_style_context().add_class("active")
+            def activate(_btn,w=win):
+                now=Gtk.get_current_event_time()
+                if not now: now=GdkX11.x11_get_server_time(bar.get_window())
+                if w.is_active() and not w.is_minimized(): w.minimize()
+                else: w.activate(now)
+            btn.connect("clicked",activate);tasks.pack_start(btn,False,False,0)
+        tasks.show_all()
+    ws.force_update()
+    for signal in ("window-opened","window-closed","active-window-changed"):
+        ws.connect(signal,rebuild_tasks)
+    rebuild_tasks()
+    bar.show_all();bar.move(0,height-bar_h)
+    def strut():
+        xid=bar.get_window().get_xid()
+        values=[0,0,0,bar_h,0,0,0,0,0,0,0,width-1]
+        for prop,v in (("_NET_WM_STRUT_PARTIAL",values),("_NET_WM_STRUT",values[:4])):
+            subprocess.run(["xprop","-id",str(xid),"-f",prop,"32c","-set",prop,", ".join(map(str,v))],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        return False
+    GLib.idle_add(strut)
+    print("== Droi shell ready: %sx%s scale=%s%%"%(width,height,percent),flush=True)
+    Gtk.main()
+    return 0
+
+if __name__=="__main__":
+    sys.exit(main())

@@ -1,0 +1,15 @@
+#!/bin/bash
+set -u
+export XDG_CURRENT_DESKTOP=Droi XDG_SESSION_DESKTOP=droi DESKTOP_SESSION=droi
+export XDG_SESSION_TYPE=x11
+# Use Openbox only as the window manager, not a pre-existing desktop shell.
+openbox --sm-disable --config-file /etc/xdg/openbox/rc.xml &
+wm=$!
+cleanup() { kill "$wm" 2>/dev/null || true; wait "$wm" 2>/dev/null || true; }
+trap cleanup EXIT
+for _ in $(seq 1 40); do
+  kill -0 "$wm" 2>/dev/null || { echo "Droi: Openbox stopped"; exit 1; }
+  if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id #'; then break; fi
+  sleep 0.1
+done
+/usr/bin/droi-shell

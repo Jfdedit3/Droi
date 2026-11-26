@@ -26,10 +26,9 @@ jobs:
         run: |
           set -euo pipefail
           bash -n linux/droi-apps
-          bash -n linux/droi-xfce
-          bash -n linux/droi-desktop-ui
-          python3 -m py_compile linux/droi-desktop-layout
-          python3 tests/test_desktop_layout.py
+          bash -n linux/droi-shell-session
+          python3 -m py_compile linux/droi-shell
+          python3 tests/test_droi_shell.py
           bash -n linux/droi-doctor
           sh -n linux/opencode
           python3 tests/test_windows_launcher.py
@@ -50,7 +49,7 @@ jobs:
           git -C upstream apply --check ../patches/android.patch ../patches/linux.patch
           git -C upstream apply ../patches/android.patch ../patches/linux.patch
           bash -n upstream/tools/linuxfs/desktop/droiddeck-desktop
-          grep -Fq 'no automatic Plasma fallback' upstream/tools/linuxfs/desktop/droiddeck-desktop
+          grep -Fq 'dbus-run-session -- /usr/bin/droi-shell-session' upstream/tools/linuxfs/desktop/droiddeck-desktop
           grep -Fq -- '-displayfd 3' upstream/tools/linuxfs/desktop/droiddeck-desktop
           python3 tests/test_desktop_catalog.py upstream/tools/linuxfs/desktop/droiddeck-desktop
 
@@ -492,7 +491,7 @@ jobs:
           git apply .droi/patches/android.patch .droi/patches/linux.patch
           install -Dm644 .droi/android/DroiUpdates.kt app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
           install -Dm644 .droi/android/DesktopLauncherActivity.kt app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-          for script in droi-apps droi-doctor droi-windows droi-xfce droi-desktop-ui droi-desktop-layout opencode; do
+          for script in droi-apps droi-doctor droi-windows droi-shell droi-shell-session opencode; do
             install -Dm755 ".droi/linux/$script" "tools/linuxfs/overlay/usr/bin/$script"
           done
           bash tools/ci/install-ubuntu-packages.sh gcc-aarch64-linux-gnu libc6-dev-arm64-cross

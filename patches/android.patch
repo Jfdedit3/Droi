@@ -204,7 +204,7 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt b/
 index 4764e27..e8c1adc 100644
 --- a/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
-@@ -105,6 +105,14 @@ object SessionFiles {
+@@ -105,6 +105,13 @@ object SessionFiles {
          GameEnvironmentStore.publish(context)
          WinComponents.publish(context)
          val files = arrayOf(
@@ -212,9 +212,8 @@ index 4764e27..e8c1adc 100644
 +            "usr/bin/droi-apps" to "usr/bin/droi-apps",
 +            "usr/bin/droi-doctor" to "usr/bin/droi-doctor",
 +            "usr/bin/droi-windows" to "usr/bin/droi-windows",
-+            "usr/bin/droi-xfce" to "usr/bin/droi-xfce",
-+            "usr/bin/droi-desktop-ui" to "usr/bin/droi-desktop-ui",
-+            "usr/bin/droi-desktop-layout" to "usr/bin/droi-desktop-layout",
++            "usr/bin/droi-shell" to "usr/bin/droi-shell",
++            "usr/bin/droi-shell-session" to "usr/bin/droi-shell-session",
 +            "usr/local/bin/droi-static-probe" to "usr/local/bin/droi-static-probe",
              "usr/local/bin/droiddeck-game-env" to "usr/local/bin/droiddeck-game-env",
              "usr/local/bin/droiddeck-game-debug" to "usr/local/bin/droiddeck-game-debug",
@@ -444,7 +443,7 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
              val needProton = protonUser && com.droiddeck.launcher.runtime.DesktopCatalog.protonSeedNeeded(this)
 -            if (needRuntime || needResume || needDesktop || needProton) installThenStart(needRuntime, needDesktop, needProton, needResume)
 +            val alternative = if (intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_DESKTOP)
-+                DroiDesktop.selected(this).takeIf { it != DroiDesktop.PLASMA && !it.installed(this) } else null
++                DroiDesktop.DROI.takeIf { !it.installed(this) } else null
 +            if (needRuntime || needResume || needDesktop || needProton || alternative != null)
 +                installThenStart(needRuntime, needDesktop, needProton, needResume, alternative)
          }
@@ -486,13 +485,12 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
                  if (activeInstallWorker === worker) SessionState.installing = "proton"
                  SessionEvents.transition(SessionPhase.INSTALLING_RUNTIME, "proton.installing", mapOf("component" to "proton"))
                  val protonProblem = installProton()
-@@ -2818,7 +2827,32 @@
+@@ -2818,7 +2827,31 @@
          return getString(R.string.session_runtime_install_failed)
      }
  
 -    private fun installDesktop(): String? {
 +    private fun installDroiDesktop(choice: DroiDesktop): String? {
-+        if (choice == DroiDesktop.LXQT) File(LinuxRuntime.rootDir(this), ".droi-preserve-lxqt").writeText("1\n")
 +        if (choice.installed(this)) return null
 +        uiHandler.post {
 +            loading.percent = -1
@@ -510,7 +508,7 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
 +                    uiHandler.post { loading.say(line.take(180), LoadingState.Topic.RUNTIME, readable = true) }
 +            }
 +            if (code == 0 && choice.installed(this)) null
-+            else "Installation de ${choice.label} échouée (code $code). Vérifie les journaux ou sélectionne KDE Plasma."
++            else "Installation de ${choice.label} échouée (code $code). Vérifie les journaux."
 +        } catch (error: Exception) {
 +            "Installation de ${choice.label} impossible : ${error.message ?: "erreur inconnue"}"
 +        }
@@ -523,14 +521,12 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
 diff --git a/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt b/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt
 --- a/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt
-@@ -26,6 +26,10 @@
+@@ -26,6 +26,8 @@
  
      fun cleanLegacy(context: Context, listener: LinuxRuntimeInstaller.ProgressListener? = null) {
          val root = LinuxRuntime.rootDir(context)
-+        // Droi supports LXQt as an independently selected desktop, not legacy migration debris.
-+        if (File(root, ".droi-preserve-lxqt").isFile ||
-+            com.droiddeck.launcher.DroiDesktop.selected(context) == com.droiddeck.launcher.DroiDesktop.LXQT
-+        ) return
++        // Keep packages previously installed through Droi; no destructive desktop migration.
++        if (File(root, ".droi-preserve-lxqt").isFile) return
          if (FileUtils.readString(File(root, CLEANED))?.trim() == "1") return
          if (!File(root, CLEANING).exists() && !File(root, ".droiddeck-pkg-desktop").exists() && !File(root, "usr/bin/lxqt-session").exists()) return
          listener?.onProgress(context.getString(R.string.desktop_cleaning_legacy), -1)
