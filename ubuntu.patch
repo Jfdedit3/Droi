@@ -802,7 +802,7 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 index ee1e3a3..0438bde 100644
 --- a/tools/linuxfs/desktop/droiddeck-desktop
 +++ b/tools/linuxfs/desktop/droiddeck-desktop
-@@ -128,6 +128,31 @@ if [ -n "${LANGUAGE:-}" ]; then
+@@ -128,6 +128,51 @@ if [ -n "${LANGUAGE:-}" ]; then
  else
    kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE --delete
  fi
@@ -831,6 +831,26 @@ index ee1e3a3..0438bde 100644
 +  if [ "$(id -u)" != 0 ]; then root_cmd=(/usr/local/bin/droiddeck-root); fi
 +  "${root_cmd[@]}" env DEBIAN_FRONTEND=noninteractive TMPDIR=/tmp apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y "$deb"
 +) >>"$HOME/.droi-chatgpt-setup.log" 2>&1 &
++# Drog: configure a dedicated launcher for root/PRoot, retaining the Debian binary.
++mkdir -p /usr/local/bin "$HOME/.local/share/applications"
++cat > /usr/local/bin/chatgpt <<'DROI_CHATGPT_WRAPPER'
++#!/bin/sh
++: "${HOME:=/root}"
++export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
++mkdir -p "$CODEX_HOME" || exit 1
++exec /usr/bin/chatgpt --no-sandbox --disable-setuid-sandbox "$@"
++DROI_CHATGPT_WRAPPER
++chmod 0755 /usr/local/bin/chatgpt
++cat > "$HOME/.local/share/applications/droi-chatgpt.desktop" <<'DROI_CHATGPT_DESKTOP'
++[Desktop Entry]
++Type=Application
++Name=ChatGPT
++Comment=ChatGPT Desktop (Droi Linux)
++Exec=/usr/local/bin/chatgpt
++Icon=chatgpt
++Terminal=false
++Categories=Network;Office;
++DROI_CHATGPT_DESKTOP
  cat > /usr/share/applications/droiddeck-steam-x64.desktop <<'ENTRY'
  [Desktop Entry]
  Type=Application

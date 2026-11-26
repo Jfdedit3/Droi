@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: DroidDeck <droiddeck@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 12:00:00 +0000
+Subject: [PATCH] statx: do not translate empty pathname with AT_EMPTY_PATH
+
+---
+ src/syscall/enter.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/syscall/enter.c b/src/syscall/enter.c
+--- a/src/syscall/enter.c
++++ b/src/syscall/enter.c
+@@ -591,9 +591,14 @@ int translate_syscall_enter(Tracee *tracee)
+ 		status = get_sysarg_path(tracee, newpath, SYSARG_2);
+ 		if (status < 0)
+ 			break;
+ 
++		/* AT_EMPTY_PATH uses dirfd, already a host descriptor. */
++		if (newpath[0] == '\0' &&
++		    (peek_reg(tracee, CURRENT, SYSARG_3) & AT_EMPTY_PATH))
++			break;
++
+ 		status = translate_path2(
+ 			tracee,
+ 			newdirfd,
+ 			newpath,
+ 			SYSARG_2,

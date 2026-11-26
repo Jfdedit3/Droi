@@ -23,3 +23,7 @@ Dans Droi, ouvre **Paramètres → Télécharger automatiquement les nouveaux AP
 Le [workflow GitHub Actions](.github/workflows/build-apk.yml) récupère la révision de DroidDeck utilisée par le projet, applique [les modifications de Droi](ubuntu.patch), puis compile l’APK ARM64.
 
 Le code de base est celui de [DroidDeck](https://github.com/Droid-Deck/DroidDeck), distribué sous [GNU GPL v3](https://github.com/Droid-Deck/DroidDeck/blob/d38fd373f0caf6574458abc574640f2d961d09d9/LICENSE).
+
+## ChatGPT Desktop sur Ubuntu
+
+Au lancement du bureau, Droi prépare un raccourci ChatGPT qui démarre l'application Electron avec `--no-sandbox` (nécessaire dans cette session Ubuntu exécutée en root). Un correctif PRoot pour `statx(..., AT_EMPTY_PATH, ...)` est compilé dans l'APK et son pack natif est embarqué, plutôt que récupéré depuis le dépôt officiel. Le répertoire `CODEX_HOME` est conservé dans `~/.codex` ; les données de l'installation Ubuntu existante ne sont pas effacées. La compatibilité complète de Codex ARM64 reste à tester sur le téléphone.

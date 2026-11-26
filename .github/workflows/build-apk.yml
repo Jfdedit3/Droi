@@ -75,6 +75,15 @@ jobs:
       - name: Check out MaliBridge
         run: git submodule update --init external/MaliBridge
 
+      - uses: actions/checkout@v4
+        with:
+          path: .droi
+          persist-credentials: false
+      - name: Stage ChatGPT PRoot fix
+        run: |
+          set -euo pipefail
+          install -m 0644 .droi/chatgpt-proot.patch tools/proot/patches/0030-statx-empty-path.patch
+          grep -q 'AT_EMPTY_PATH' tools/proot/patches/0030-statx-empty-path.patch
       - name: Plan component identities
         id: plan
         run: python3 tools/components/prepare.py plan
@@ -243,6 +252,15 @@ jobs:
             !/docs/releases/media/
           sparse-checkout-cone-mode: false
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: .droi
+          persist-credentials: false
+      - name: Stage ChatGPT PRoot fix
+        run: |
+          set -euo pipefail
+          install -m 0644 .droi/chatgpt-proot.patch tools/proot/patches/0030-statx-empty-path.patch
+          grep -q 'AT_EMPTY_PATH' tools/proot/patches/0030-statx-empty-path.patch
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -428,15 +446,14 @@ jobs:
           test -f app/src/main/assets/venus/libvulkan_virtio.so
           rm venus.tzst
 
-      - name: Read the Droi desktop changes
-        uses: actions/checkout@v4
-        with:
-          path: .droi
-          persist-credentials: false
       - name: Apply the desktop launcher
         run: |
           git apply --check .droi/ubuntu.patch
           git apply .droi/ubuntu.patch
+          # Ship the exact fixed native PRoot build inside the APK; the
+          # external DroidDeck pack server cannot provide this custom digest.
+          install -Dm644 app/build/packs/proot.tar.zst app/src/main/assets/packs/proot.tar.zst
+          test -s app/src/main/assets/packs/proot.tar.zst
           install -m644 tools/linuxfs/desktop/droiddeck-desktop app/src/main/assets/linuxfs/usr/local/bin/droiddeck-desktop
 
       - name: Build APK
