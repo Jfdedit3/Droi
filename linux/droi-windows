@@ -2,6 +2,10 @@
 """Launch trusted Windows files using Droi's installed compatibility tools."""
 import os
 import hashlib
+import fcntl
+import signal
+import time
+import uuid
 import json
 import tempfile
 from pathlib import Path
@@ -39,6 +43,12 @@ def install():
     prepare_entry = ENTRY.replace("Name=Droi - Wine / Proton", "Name=Droi - Preparer le prefixe")
     prepare_entry = prepare_entry.replace("Exec=/usr/bin/droi-windows %f", "Exec=/usr/bin/droi-windows --prepare %f")
     (directory / "droi-windows-prepare.desktop").write_text(prepare_entry, encoding="utf-8")
+    for option, label in (("--cancel", "Annuler le lancement"),
+                          ("--sync esync", "Tester ESYNC")):
+        body = ENTRY.replace("Name=Droi - Wine / Proton", "Name=Droi - " + label)
+        body = body.replace("Exec=/usr/bin/droi-windows %f",
+                            "Exec=/usr/bin/droi-windows " + option + " %f")
+        (directory / ("droi-windows-" + option.split()[-1].lstrip("-") + ".desktop")).write_text(body, encoding="utf-8")
     for mode, label in (("performance", "Performance (Vulkan / Zink)"),
                         ("compatibility", "Compatibilite (OpenGL logiciel)"),
                         ("auto", "Automatique")):
@@ -99,7 +109,7 @@ def graphics_profile(path, selected=None):
     if selected not in GRAPHICS:
         selected = "auto"
     if selected == "auto":
-        return "compatibility" if path.name.casefold() == "geometrydash.exe" else "auto"
+        return "compatibility" if path.name.casefold() in ("geometrydash.exe", "nfsc.exe") else "auto"
     return selected
 
 
@@ -123,6 +133,141 @@ def error(message):
     return 1
 
 
+def launch_lock(path):
+    directory = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "droi/windows-launches"
+    directory.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(os.fsencode(path.resolve())).hexdigest()
+    return directory / (key + ".lock")
+
+
+def request_cancel(path):
+    lock = launch_lock(path)
+    with lock.open("a+", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.seek(0)
+            token = handle.read().strip()
+            if len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+                return error("Le lancement se prepare. Reessaie dans un instant.")
+            (lock.parent / (token + ".cancel")).touch()
+            print("Annulation demandee : " + path.name, flush=True)
+            return 0
+        return error("Aucun lancement Droi actif pour " + path.name)
+
+
+def notify(message):
+    print(message, flush=True)
+    if (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")) and shutil.which("notify-send"):
+        try:
+            subprocess.run(["notify-send", "-a", "Droi", "Droi Windows", message],
+                           timeout=3, check=False)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+class LaunchProgress:
+    """Optional KDE indeterminate progress. The context-menu cancel stays available."""
+    def __init__(self, name):
+        self.address = None
+        self.bus = None
+        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            return
+        self.bus = next((p for p in (shutil.which("qdbus6"), shutil.which("qdbus")) if p), None)
+        if not self.bus or not shutil.which("kdialog"):
+            return
+        try:
+            result = subprocess.run(["kdialog", "--title", "Droi", "--progressbar",
+                                     "Demarrage de " + name + " ...", "0"],
+                                    capture_output=True, text=True, timeout=5, check=True)
+            address = result.stdout.strip().split()
+            if len(address) == 2 and address[0].startswith("org.kde.kdialog") and address[1].startswith("/"):
+                self.address = address
+                self.call("showCancelButton", "true")
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    def call(self, method, *args):
+        if not self.address:
+            return ""
+        try:
+            return subprocess.run([self.bus, *self.address, method, *args], capture_output=True,
+                                  text=True, timeout=1, check=False).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    def cancelled(self):
+        return self.call("wasCancelled").lower() == "true"
+
+    def close(self):
+        self.call("close")
+        self.address = None
+
+
+def stop_group(process):
+    # Limit signals to this launch's process group, never to all Wine processes.
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def run_game(path, command, cwd, env):
+    lock = launch_lock(path)
+    with lock.open("a+", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return error(path.name + " est deja en cours de lancement ou d'execution. Utilise Ouvrir avec > Droi - Annuler le lancement si necessaire.")
+        token = uuid.uuid4().hex
+        cancel = lock.parent / (token + ".cancel")
+        handle.seek(0)
+        handle.truncate()
+        handle.write(token)
+        handle.flush()
+        progress = None
+        process = None
+        started = time.monotonic()
+        try:
+            process = subprocess.Popen(command, cwd=cwd, env=env, start_new_session=True)
+            notify("Demarrage de " + path.name + " (premier lancement parfois long).")
+            while process.poll() is None:
+                elapsed = time.monotonic() - started
+                if cancel.exists() or (progress is not None and progress.cancelled()):
+                    if progress:
+                        progress.close()
+                    stop_group(process)
+                    notify("Lancement annule : " + path.name)
+                    return 130
+                # Do not pretend to know Wine's actual progress. Show an indeterminate dialog
+                # for the startup period only; no automatic kill of a slow or running game.
+                if progress is None and elapsed >= 2 and elapsed < 90:
+                    progress = LaunchProgress(path.name)
+                if progress and elapsed >= 90:
+                    progress.close()
+                time.sleep(0.5)
+            return process.returncode
+        except BaseException:
+            if process is not None and process.poll() is None:
+                stop_group(process)
+            raise
+        finally:
+            if progress:
+                progress.close()
+            cancel.unlink(missing_ok=True)
+            handle.seek(0)
+            handle.truncate()
+            handle.flush()
+
+
 def main(args):
     try:
         if args == ["--install"]:
@@ -134,11 +279,14 @@ def main(args):
             if wine:
                 print("Wine : " + wine)
             return 0
+        if len(args) == 2 and args[0] == "--cancel":
+            return request_cancel(Path(args[1]).absolute())
         window = False
         graphics = None
         debug = False
         prepare = False
-        while args and args[0] in ("--window", "--graphics", "--debug", "--prepare"):
+        sync = "auto"
+        while args and args[0] in ("--window", "--graphics", "--debug", "--prepare", "--sync"):
             option, args = args[0], args[1:]
             if option == "--window":
                 window = True
@@ -146,6 +294,10 @@ def main(args):
                 debug = True
             elif option == "--prepare":
                 prepare = True
+            elif option == "--sync":
+                if not args or args[0] not in ("auto", "esync"):
+                    raise ValueError("Modes de synchronisation : auto, esync")
+                sync, args = args[0], args[1:]
             else:
                 if not args or args[0] not in GRAPHICS:
                     raise ValueError("Modes graphiques : auto, performance, compatibility")
@@ -153,12 +305,13 @@ def main(args):
         if args and args[0] == "--":
             args = args[1:]
         if not args:
-            raise ValueError("Usage : droi-windows [--debug] [--prepare] [--graphics auto|performance|compatibility] [--window] FICHIER.exe [ARGUMENTS...]")
+            raise ValueError("Usage : droi-windows [--debug] [--prepare] [--sync auto|esync] [--graphics auto|performance|compatibility] [--window] FICHIER.exe [ARGUMENTS...]")
         path = Path(args[0]).absolute()
         validate(path)
         env = os.environ.copy()
         env["DROI_WINDOWS_LAUNCH"] = "1"
         env["DROI_FAST_LAUNCH"] = "0" if debug else "1"
+        env["DROI_SYNC_MODE"] = sync
         if debug:
             env["DD_GAME_LOGS"] = "1"
         else:
@@ -197,7 +350,7 @@ def main(args):
                 command = [wine, "msiexec", "/i", "Z:" + str(path).replace("/", "\\"), *args[1:]]
             else:
                 command = [wine, str(path), *args[1:]]
-        result = subprocess.call(command, cwd=str(path.parent), env=env)
+        result = run_game(path, command, cwd=str(path.parent), env=env)
         if prepare:
             message = "Prefixe initialise. Tu peux maintenant lancer le jeu." if result == 0 else "Preparation du prefixe echouee (code %s)." % result
             print(message, flush=True)

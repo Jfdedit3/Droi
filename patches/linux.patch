@@ -31,7 +31,7 @@ index c6ba899..2afda26 100755
 +    mode = env.get("DROI_GRAPHICS_MODE", "auto")
 +    program = env.get("DROIDDECK_DESKTOP_PROGRAM") or (command[2] if len(command) > 2 else "")
 +    # An explicit performance choice always wins over the default game profile.
-+    return mode == "compatibility" or (mode == "auto" and Path(program).name.casefold() == "geometrydash.exe")
++    return mode == "compatibility" or (mode == "auto" and Path(program).name.casefold() in ("geometrydash.exe", "nfsc.exe"))
 +
 +
 +def droi_apply_software_gl(env):
@@ -102,6 +102,19 @@ index c6ba899..2afda26 100755
 +        env["VKD3D_DEBUG"] = "err"
      env = game_logs(command, env, app_id)
      if mic_enabled == "0":
+@@ -1744,6 +1772,12 @@
+                 except OSError as undo:
+                     print("droiddeck-game-env: DiRT telemetry fix: prefix ws2_32 not put back (%s); Wine uses its own copy "
+                           "and the next launch puts the file back" % undo, file=sys.stderr)
++    if env.get("DROI_SYNC_MODE") == "esync":
++        # Explicit opt-in: test esync without ntsync or fsync.
++        env.update(DD_SYNC="0", DD_SYNC_FALLBACK="1", DD_FSYNC_FIRST="0",
++                   PROTON_NO_NTSYNC="1", PROTON_NO_FSYNC="1",
++                   PROTON_NO_ESYNC="0", WINEESYNC="1", WINEFSYNC="0")
++        print("droi-windows: ESYNC requested (active Wine prefix may retain its current sync)", file=sys.stderr)
+     sync = load_sync()
+     launch, launch_env = select_sync(command, env, sync)
+     if launch[0] != command[0]:
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
 index bbacb76..01397ee 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install

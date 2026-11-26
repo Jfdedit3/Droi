@@ -15,11 +15,11 @@ class WindowsLauncherTests(unittest.TestCase):
             exe = Path(tmp) / "A Game.EXE"
             exe.write_bytes(b"MZ" + b"\0" * 64)
             with patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
-                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                 patch.dict(g, {"run_game": unittest.mock.Mock(return_value=0)}):
                 self.assertEqual(main(["--", str(exe), "--flag"]), 0)
-                self.assertEqual(call.call_args.args[0], [g["OPEN"], "--", str(exe), "--flag"])
-                self.assertEqual(call.call_args.kwargs["cwd"], tmp)
-                self.assertEqual(call.call_args.kwargs["env"]["DROI_WINDOWS_LAUNCH"], "1")
+                self.assertEqual(g["run_game"].call_args.args[1], [g["OPEN"], "--", str(exe), "--flag"])
+                self.assertEqual(g["run_game"].call_args.kwargs["cwd"], tmp)
+                self.assertEqual(g["run_game"].call_args.kwargs["env"]["DROI_WINDOWS_LAUNCH"], "1")
 
     def test_geometry_dash_uses_compatibility_without_shared_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -27,15 +27,47 @@ class WindowsLauncherTests(unittest.TestCase):
             exe.write_bytes(b"MZ" + b"\0" * 64)
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}), \
                  patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
-                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                 patch.dict(g, {"run_game": unittest.mock.Mock(return_value=0)}):
                 self.assertEqual(main([str(exe)]), 0)
-                self.assertEqual(call.call_args.args[0], [g["PROTON"], "--window", "--", str(exe)])
-                env = call.call_args.kwargs["env"]
+                self.assertEqual(g["run_game"].call_args.args[1], [g["PROTON"], "--window", "--", str(exe)])
+                env = g["run_game"].call_args.kwargs["env"]
                 self.assertEqual(env["MESA_LOADER_DRIVER_OVERRIDE"], "swrast")
                 self.assertEqual(env["GALLIUM_DRIVER"], "llvmpipe")
                 self.assertEqual(env["DD_DESKTOP_GPU"], "off")
-                self.assertNotIn("--compatdata", call.call_args.args[0])
-                self.assertNotIn("--prefix", call.call_args.args[0])
+                self.assertNotIn("--compatdata", g["run_game"].call_args.args[1])
+                self.assertNotIn("--prefix", g["run_game"].call_args.args[1])
+
+    def test_nfsc_uses_compatibility_and_esync_is_optional(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "NFSC.exe"
+            exe.write_bytes(b"MZ")
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp}), \
+                 patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")},
+                                "run_game": unittest.mock.Mock(return_value=0)}):
+                self.assertEqual(main([str(exe)]), 0)
+                self.assertEqual(g["run_game"].call_args.args[1], [g["PROTON"], "--window", "--", str(exe)])
+                self.assertEqual(g["run_game"].call_args.kwargs["env"]["DROI_SYNC_MODE"], "auto")
+                self.assertEqual(main(["--sync", "esync", str(exe)]), 0)
+                self.assertEqual(g["run_game"].call_args.kwargs["env"]["DROI_SYNC_MODE"], "esync")
+
+    def test_duplicate_is_rejected_and_cancel_is_scoped(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "game.exe"
+            with patch.dict(os.environ, {"XDG_CACHE_HOME": tmp}), \
+                 patch.dict(g, {"error": lambda message: 1}), \
+                 patch.object(g["subprocess"], "Popen") as launch:
+                lock = g["launch_lock"](exe)
+                with lock.open("w+") as handle:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    token = "a" * 32
+                    handle.write(token)
+                    handle.flush()
+                    self.assertEqual(g["run_game"](exe, ["unused"], tmp, {}), 1)
+                    launch.assert_not_called()
+                    self.assertEqual(g["request_cancel"](exe), 0)
+                    self.assertTrue((lock.parent / (token + ".cancel")).exists())
+                self.assertEqual(g["request_cancel"](exe), 1)
 
     def test_graphics_choice_persists_per_executable(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,15 +87,15 @@ class WindowsLauncherTests(unittest.TestCase):
             exe.write_bytes(b"MZ")
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp, "PROTON_LOG": "1"}), \
                  patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
-                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                 patch.dict(g, {"run_game": unittest.mock.Mock(return_value=0)}):
                 self.assertEqual(main([str(exe)]), 0)
-                env = call.call_args.kwargs["env"]
+                env = g["run_game"].call_args.kwargs["env"]
                 self.assertEqual(env["DROI_FAST_LAUNCH"], "1")
                 self.assertEqual(env["DD_GAME_LOGS"], "0")
                 self.assertNotIn("PROTON_LOG", env)
                 self.assertEqual(env["WINEDEBUG"], "-all,err+all")
                 self.assertEqual(main(["--debug", str(exe)]), 0)
-                env = call.call_args.kwargs["env"]
+                env = g["run_game"].call_args.kwargs["env"]
                 self.assertEqual(env["DROI_FAST_LAUNCH"], "0")
                 self.assertEqual(env["DD_GAME_LOGS"], "1")
 
@@ -73,10 +105,10 @@ class WindowsLauncherTests(unittest.TestCase):
             exe.write_bytes(b"MZ")
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": tmp, "DISPLAY": "", "WAYLAND_DISPLAY": ""}), \
                  patch.dict(g, {"installed": lambda: {"Proton": ("tool", "run")}}), \
-                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                 patch.dict(g, {"run_game": unittest.mock.Mock(return_value=0)}):
                 self.assertEqual(main(["--prepare", str(exe)]), 0)
-                self.assertEqual(call.call_args.args[0], [g["PROTON"], "--window", "--", str(exe)])
-                env = call.call_args.kwargs["env"]
+                self.assertEqual(g["run_game"].call_args.args[1], [g["PROTON"], "--window", "--", str(exe)])
+                env = g["run_game"].call_args.kwargs["env"]
                 self.assertEqual(env["DROI_PREPARE_PREFIX"], "1")
                 self.assertEqual(env["DD_DESKTOP_GPU"], "off")
 
@@ -86,9 +118,9 @@ class WindowsLauncherTests(unittest.TestCase):
             msi.write_bytes(bytes.fromhex("D0CF11E0A1B11AE1"))
             with patch.dict(g, {"installed": lambda: {}}), \
                  patch.object(g["shutil"], "which", return_value="/usr/bin/wine"), \
-                 patch.object(g["subprocess"], "call", return_value=0) as call:
+                 patch.dict(g, {"run_game": unittest.mock.Mock(return_value=0)}):
                 self.assertEqual(main([str(msi)]), 0)
-                self.assertEqual(call.call_args.args[0][:3], ["/usr/bin/wine", "msiexec", "/i"])
+                self.assertEqual(g["run_game"].call_args.args[1][:3], ["/usr/bin/wine", "msiexec", "/i"])
 
     def test_missing_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
