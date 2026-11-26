@@ -34,12 +34,22 @@ internal enum class DroiDesktop(val id: String, val label: String, val descripti
     XFCE("xfce", "XFCE", "Bureau léger · X11", listOf("xfce4-session", "xfwm4", "xfce4-panel", "xfdesktop", "thunar", "xfce4-terminal"),
         listOf("xfce4", "xfce4-terminal")),
     LXQT("lxqt", "LXQt", "Bureau léger · Qt / X11", listOf("startlxqt", "lxqt-session", "lxqt-panel", "pcmanfm-qt", "openbox", "qterminal"),
-        listOf("lxqt-core", "openbox", "qterminal"));
+        listOf("lxqt-core", "openbox", "qterminal")),
+    MATE("mate", "MATE", "Bureau classique · X11", listOf("mate-session", "marco", "mate-panel", "caja", "mate-terminal"),
+        listOf("mate-desktop-environment-core", "mate-terminal")),
+    CINNAMON("cinnamon", "Cinnamon", "Bureau moderne · rendu logiciel expérimental", listOf("cinnamon-session-cinnamon2d", "cinnamon", "nemo"),
+        listOf("cinnamon-core")),
+    LXDE("lxde", "LXDE", "Bureau GTK très léger · X11", listOf("startlxde", "lxsession", "lxpanel", "pcmanfm", "lxterminal", "openbox"),
+        listOf("lxde-core", "openbox-lxde-session", "lxterminal")),
+    ENLIGHTENMENT("enlightenment", "Enlightenment", "Bureau EFL · X11 expérimental", listOf("enlightenment_start", "enlightenment", "terminology"),
+        listOf("enlightenment", "terminology")),
+    ICEWM("icewm", "IceWM", "Gestionnaire de fenêtres minimaliste · X11", listOf("icewm-session", "icewm", "xterm", "pcmanfm"),
+        listOf("icewm", "xterm", "pcmanfm"));
 
     fun installed(context: Context): Boolean {
         if (this == PLASMA) return com.droiddeck.launcher.runtime.DesktopCatalog.desktopInstalled(context)
         val root = LinuxRuntime.rootDir(context)
-        return (executables + listOf("Xwayland", "xdpyinfo", "xauth", "mcookie")).all {
+        return (executables + listOf("Xwayland", "xdpyinfo", "xauth", "mcookie", "flock")).all {
             File(root, "usr/bin/$it").isFile
         }
     }
@@ -90,7 +100,8 @@ class DesktopLauncherActivity : ComponentActivity() {
                                         onDismissRequest = { desktopChoice = false },
                                         title = { Text("Interface Ubuntu") },
                                         text = {
-                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                                                verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                                 DroiDesktop.values().forEach { choice ->
                                                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                                                         RadioButton(selected = selectedId == choice.id, onClick = { selectedId = choice.id })

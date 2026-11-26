@@ -48,6 +48,7 @@ jobs:
           bash -n upstream/tools/linuxfs/desktop/droiddeck-desktop
           grep -Fq 'no automatic Plasma fallback' upstream/tools/linuxfs/desktop/droiddeck-desktop
           grep -Fq -- '-displayfd 3' upstream/tools/linuxfs/desktop/droiddeck-desktop
+          python3 tests/test_desktop_catalog.py upstream/tools/linuxfs/desktop/droiddeck-desktop
 
   xbox:
     name: Prepare shared ARM64 runtime dependencies

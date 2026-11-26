@@ -19,7 +19,7 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
-@@ -224,11 +227,103 @@
+@@ -224,11 +227,112 @@
  if ! /usr/local/bin/droiddeck-pipewire start; then
    echo "== pipewire: not running; screen capture has no picture"
  fi
@@ -38,6 +38,11 @@ index ee1e3a3..0438bde 100644
 +  case "$1" in
 +    xfce) export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce; session=startxfce4 ;;
 +    lxqt) export XDG_CURRENT_DESKTOP=LXQt XDG_SESSION_DESKTOP=lxqt DESKTOP_SESSION=lxqt; session=startlxqt ;;
++    mate) export XDG_CURRENT_DESKTOP=MATE XDG_SESSION_DESKTOP=mate DESKTOP_SESSION=mate; session=mate-session ;;
++    cinnamon) export XDG_CURRENT_DESKTOP=X-Cinnamon XDG_SESSION_DESKTOP=cinnamon DESKTOP_SESSION=cinnamon; session=cinnamon-session-cinnamon2d ;;
++    lxde) export XDG_CURRENT_DESKTOP=LXDE XDG_SESSION_DESKTOP=lxde DESKTOP_SESSION=lxde; session=startlxde ;;
++    enlightenment) export XDG_CURRENT_DESKTOP=Enlightenment XDG_SESSION_DESKTOP=enlightenment DESKTOP_SESSION=enlightenment; session=enlightenment_start ;;
++    icewm) export XDG_CURRENT_DESKTOP=ICEWM XDG_SESSION_DESKTOP=icewm DESKTOP_SESSION=icewm; session=icewm-session ;;
 +    *) exit 2 ;;
 +  esac
 +  echo "== Droi: requested $1; session=$session; WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}"
@@ -96,7 +101,11 @@ index ee1e3a3..0438bde 100644
 +    xwayland_ready || exit 69
 +  fi
 +  echo "== Droi: $session on $DISPLAY (Xwayland ready)"
-+  dbus-run-session -- "$session"
++  if [ "$1" = icewm ]; then
++    dbus-run-session -- /bin/bash -c 'pcmanfm --desktop & exec icewm-session'
++  else
++    dbus-run-session -- "$session"
++  fi
 +  rc=$?
 +  echo "== Droi: $session returned $rc"
 +  exit "$rc"
@@ -106,7 +115,7 @@ index ee1e3a3..0438bde 100644
 +if [ -n "${DD_BOTTOM_DESKTOP:-}" ]; then desktop_choice=plasma; fi
 +echo "== Droi: selected desktop=$desktop_choice"
 +case "$desktop_choice" in
-+  xfce|lxqt)
++  xfce|lxqt|mate|cinnamon|lxde|enlightenment|icewm)
 +    droi_alternative "$desktop_choice"
 +    rc=$?
 +    if [ "$rc" -ne 0 ]; then
@@ -125,7 +134,8 @@ index ee1e3a3..0438bde 100644
 +esac
 +/usr/local/bin/droiddeck-pipewire stop
 +echo "== droiddeck-desktop: $desktop_choice ended ($rc)"
- if [ "$rc" -eq 0 ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
+-if [ "$rc" -eq 0 ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
++if [ "$rc" -eq 0 ] && [ "$desktop_choice" = plasma ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
    /usr/local/bin/droiddeck-steam-launch bigpicture
    sleep 30
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env

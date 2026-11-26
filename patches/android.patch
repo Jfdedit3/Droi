@@ -495,8 +495,8 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/s
 +            loading.say("Installation de ${choice.label}…", LoadingState.Topic.RUNTIME, readable = true)
 +        }
 +        val root = LinuxRuntime.rootDir(this)
-+        val packages = choice.packages + listOf("Xwayland" to "xwayland", "xdpyinfo" to "x11-utils",
-+            "xauth" to "xauth", "mcookie" to "util-linux").filterNot { File(root, "usr/bin/" + it.first).isFile }.map { it.second }
++        val packages = (choice.packages + listOf("Xwayland" to "xwayland", "xdpyinfo" to "x11-utils",
++            "xauth" to "xauth", "mcookie" to "util-linux", "flock" to "util-linux").filterNot { File(root, "usr/bin/" + it.first).isFile }.map { it.second }).distinct()
 +        val command = listOf("/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "TMPDIR=/tmp", "/bin/bash", "-c",
 +            "apt-get update && apt-get install -y --no-install-recommends " + packages.joinToString(" "))
 +        return try {
