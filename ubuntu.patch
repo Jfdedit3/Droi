@@ -854,7 +854,7 @@ index ee1e3a3..0438bde 100644
  cat > /usr/share/applications/droiddeck-steam-x64.desktop <<'ENTRY'
  [Desktop Entry]
  Type=Application
-@@ -180,6 +205,38 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
+@@ -180,6 +225,38 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
    export XDG_DATA_DIRS=/var/lib/snapd/desktop:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
    export PATH=$PATH:/snap/bin
  fi
