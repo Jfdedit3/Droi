@@ -19,7 +19,7 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
-@@ -224,11 +227,126 @@
+@@ -224,11 +227,128 @@
  if ! /usr/local/bin/droiddeck-pipewire start; then
    echo "== pipewire: not running; screen capture has no picture"
  fi
@@ -115,7 +115,9 @@ index ee1e3a3..0438bde 100644
 +  fi
 +  echo "== Droi: desktop scale=$scale dpi=$dpi; X11 geometry unchanged"
 +  echo "== Droi: $session on $DISPLAY (Xwayland ready)"
-+  if [ "$1" = icewm ]; then
++  if [ "$1" = xfce ]; then
++    dbus-run-session -- /usr/bin/droi-xfce
++  elif [ "$1" = icewm ]; then
 +    dbus-run-session -- /bin/bash -c 'pcmanfm --desktop & exec icewm-session'
 +  else
 +    dbus-run-session -- "$session"

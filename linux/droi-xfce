@@ -1,0 +1,93 @@
+#!/bin/bash
+# Called inside the authenticated XFCE D-Bus/X11 session.
+set -u
+case "${DROI_DESKTOP_SCALE:-150}" in
+  100) dpi=96; icon=32; panel=28; dock=36 ;;
+  125) dpi=120; icon=40; panel=32; dock=40 ;;
+  200) dpi=192; icon=56; panel=44; dock=52 ;;
+  *) dpi=144; icon=48; panel=36; dock=44 ;;
+esac
+# Do not compound native Xfce DPI with GTK's integer window scaling.
+export GDK_SCALE=1 GDK_DPI_SCALE=1
+setprop() {
+  xfconf-query -c "$1" -p "$2" -s "$4" >/dev/null 2>&1 ||
+    xfconf-query -c "$1" -p "$2" -n -t "$3" -s "$4" >/dev/null 2>&1
+}
+# Settings live in the normal XFCE profile; no unrelated settings are reset.
+setprop xsettings /Gdk/WindowScalingFactor int 1 || true
+setprop xsettings /Xft/DPI int "$dpi" || true
+setprop xfwm4 /general/use_compositing bool false || true
+setprop xfce4-desktop /desktop-icons/icon-size uint "$icon" || true
+# Provide a local, dependency-free fallback wallpaper when no valid one exists.
+wallpaper="$HOME/.local/share/droi/xfce-wallpaper.png"
+if [ ! -s "$wallpaper" ]; then
+  mkdir -p "$(dirname "$wallpaper")"
+  python3 - "$wallpaper" <<'PY'
+import struct, sys, zlib
+w, h = 480, 270
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+pixels = bytearray()
+for y in range(h):
+    pixels.append(0)
+    for x in range(w):
+        t = (x / (w - 1) + y / (h - 1)) / 2
+        pixels.extend((int(18 + 22*t), int(42 + 48*t), int(65 + 63*t)))
+with open(sys.argv[1], "wb") as f:
+    f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) +
+            chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b""))
+PY
+fi
+repair_wallpaper() {
+  local base="$1" current style
+  current=$(xfconf-query -c xfce4-desktop -p "$base/last-image" 2>/dev/null || true)
+  style=$(xfconf-query -c xfce4-desktop -p "$base/image-style" 2>/dev/null || true)
+  # Keep the user's existing, readable wallpaper.
+  if [ -n "$current" ] && [ -r "$current" ] && [ "$style" != 0 ]; then return 0; fi
+  [ -s "$wallpaper" ] || return 0
+  setprop xfce4-desktop "$base/last-image" string "$wallpaper" || true
+  setprop xfce4-desktop "$base/image-style" int 5 || true
+}
+apply_layout() {
+  local path base output workspace
+  # Default panel configuration is materialized by xfce4-panel on its first run.
+  for _ in $(seq 1 40); do
+    if xfconf-query -c xfce4-panel -l 2>/dev/null | grep -qE '^/panels/panel-[0-9]+/size$'; then break; fi
+    sleep 0.5
+  done
+  while IFS= read -r path; do
+    case "$path" in
+      /panels/panel-*/size)
+        base=${path%/size}
+        if [ "$base" = /panels/panel-2 ]; then
+          setprop xfce4-panel "$path" uint "$dock" || true
+        else
+          setprop xfce4-panel "$path" uint "$panel" || true
+        fi
+        setprop xfce4-panel "$base/icon-size" uint 0 || true
+        ;;
+    esac
+  done < <(xfconf-query -c xfce4-panel -l 2>/dev/null)
+  # Update current monitor properties, including new Xwayland monitor names.
+  while IFS= read -r output; do
+    [ -n "$output" ] || continue
+    for workspace in 0 1 2 3; do
+      repair_wallpaper "/backdrop/screen0/monitor$output/workspace$workspace"
+    done
+  done < <(xrandr --query 2>/dev/null | awk '$2 == "connected" {print $1}')
+  while IFS= read -r path; do
+    case "$path" in
+      /backdrop/*/last-image) repair_wallpaper "${path%/last-image}" ;;
+    esac
+  done < <(xfconf-query -c xfce4-desktop -l 2>/dev/null)
+  xfdesktop --reload >/dev/null 2>&1 || true
+  echo "== Droi XFCE: dpi=$dpi icons=$icon panel=$panel dock=$dock compositor=off"
+}
+# Run layout adjustments after panel startup, but let the desktop session own its lifetime.
+apply_layout &
+layout_pid=$!
+startxfce4
+rc=$?
+kill "$layout_pid" 2>/dev/null || true
+wait "$layout_pid" 2>/dev/null || true
+exit "$rc"

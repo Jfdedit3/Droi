@@ -71,3 +71,7 @@ Le sélecteur déroulant propose désormais KDE Plasma, XFCE, LXQt, MATE, Cinnam
 ### Taille de l’interface X11
 
 Le menu Ubuntu propose 100, 125, 150 (par défaut) et 200 %. La préférence est transmise aux sessions X11 uniquement ; Qt, GTK, EFL et Xft reçoivent des réglages de taille au démarrage. Le framebuffer et la résolution des jeux ne sont pas modifiés. GTK utilise un facteur entier pour les éléments graphiques ; à 150 %, certains éléments sont donc agrandis à 200 % tandis que le texte suit le DPI demandé. Les panneaux GTK2 et les réglages propres aux bureaux peuvent ignorer ces paramètres. Plasma conserve son comportement d'origine. Le résultat doit être testé sur l'appareil.
+
+### Correction XFCE sur écran de téléphone
+
+XFCE utilise désormais son DPI natif au lieu du facteur GTK entier (qui doublait la taille à 150 %). Les icônes et les panneaux sont dimensionnés séparément selon la préférence de taille. Le compositeur XFWM est désactivé pour cette session afin de limiter la charge de rendu. Un fond local PNG est utilisé uniquement lorsqu'aucune image lisible n'est configurée ou que l'image est désactivée. La résolution de Xwayland, les fichiers, les autres bureaux et les préfixes Wine restent inchangés. La configuration XFCE est ajustée au démarrage, sans effacer ses autres préférences.
