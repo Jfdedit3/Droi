@@ -231,7 +231,7 @@ index 9904584..d877c44 100644
              if (gen == sessionGen && SessionState.running) com.droiddeck.launcher.runtime.NativeGuest.sessionMode = nativeUserland
          }
 -        val fastPathKey = if (ProotFastPath.enabled(this)) {
-+        val fastPathKey = if (!nativeUserland && ProotFastPath.enabled(this)) {
++        val fastPathKey = if (ProotFastPath.enabled(this, nativeUserland)) {
              val prootBinds = LinuxRuntime.binds(
 @@ -811,6 +814,20 @@ class SessionService : Service() {
          if (SessionState.mode == MODE_DESKTOP) {
@@ -402,3 +402,20 @@ index 9bed7b6..4d49322 100644
      <cache-path name="shared_logs" path="share/" />
 +    <cache-path name="droi_updates" path="droi-updates/" />
  </paths>
+diff --git a/app/src/main/java/com/droiddeck/launcher/runtime/ProotFastPath.kt b/app/src/main/java/com/droiddeck/launcher/runtime/ProotFastPath.kt
+--- a/app/src/main/java/com/droiddeck/launcher/runtime/ProotFastPath.kt
++++ b/app/src/main/java/com/droiddeck/launcher/runtime/ProotFastPath.kt
+@@ -15,10 +15,9 @@
+     fun allows(preference: Boolean, noSeccomp: Boolean, source: String, nativeUserland: Boolean = false): Boolean =
+         preference && !noSeccomp && !nativeUserland && source == LinuxRuntime.PROOT_PACK
+ 
+-    fun enabled(context: Context): Boolean {
+-        val preference = SessionPrefs.prootFastPath(context)
+-        val noSeccomp = SessionPrefs.prootNoSeccomp(context)
+-        val nativeUserland = SessionPrefs.nativeUserland(context)
++    fun enabled(context: Context, nativeUserland: Boolean = NativeGuest.forSession(context)): Boolean {
++        val preference = SessionPrefs.prootFastPath(context)
++        val noSeccomp = SessionPrefs.prootNoSeccomp(context)
+         val source = LinuxRuntime.prootSource(context)
+         val on = allows(preference, noSeccomp, source, nativeUserland)
+         if (preference && !noSeccomp && !nativeUserland && !on)

@@ -290,3 +290,15 @@ diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-proton-run b/tools/li
  
  
  if __name__ == "__main__":
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-debug b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-debug
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-debug
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-debug
+@@ -117,7 +117,7 @@
+     if program:
+         env = dict(env)
+         env.pop("DROIDDECK_DESKTOP_PROGRAM", None)
+-    if not program or env.get("PROTON_LOG", "0") not in ("", "0"):
++    if env.get("DROI_FAST_LAUNCH") == "1" or not program or env.get("PROTON_LOG", "0") not in ("", "0"):
+         yield env, None
+         return
+     folder = session_debug_dir(env)
