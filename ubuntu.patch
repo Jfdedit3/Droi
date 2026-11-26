@@ -132,10 +132,10 @@ index 58e7e12..3640fc9 100644
          GpuClockPin.clearLeftover(this)
 diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
 new file mode 100644
-index 0000000..c9296c1
+index 0000000..3201368
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,152 @@
 +package com.droiddeck.launcher
 +
 +import androidx.activity.ComponentActivity
@@ -153,11 +153,19 @@ index 0000000..c9296c1
 +import com.droiddeck.launcher.ui.SettingsGroup
 +import com.droiddeck.launcher.ui.TabStrip
 +import android.content.Intent
++import com.droiddeck.launcher.session.ComponentsManager
++import com.droiddeck.launcher.session.SessionState
++import android.os.Handler
++import android.os.Looper
 +import android.os.Bundle
 +import android.widget.Toast
 +import com.droiddeck.launcher.session.SessionService
 +
 +class DesktopLauncherActivity : ComponentActivity() {
++    private val mainHandler = Handler(Looper.getMainLooper())
++    private val components by lazy { ComponentsMenu(this, mainHandler) }
++    private val protons by lazy { ProtonMenu(this, mainHandler, onInstalled = { components.refreshComponents() }) }
++
 +    override fun onCreate(savedInstanceState: Bundle?) {
 +        super.onCreate(savedInstanceState)
 +        setContent {
@@ -169,11 +177,13 @@ index 0000000..c9296c1
 +                    Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
 +                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
 +                        Text("Droi Desktop", style = MaterialTheme.typography.headlineMedium)
-+                        TabStrip(listOf("Bureaux", "Paramètres"), tab, { tab = it })
++                        TabStrip(listOf("Bureaux", "Composants", "Paramètres"), tab, { tab = it })
 +                        if (tab == 0) {
 +                            SettingsGroup("Bureaux Linux") {
 +                                MenuItem("Ubuntu", false, detail = "KDE Plasma") { launchUbuntu() }
 +                            }
++                        } else if (tab == 1) {
++                            DesktopComponents()
 +                        } else {
 +                            SettingsGroup("Mises à jour de Droi") {
 +                                MenuItem("Télécharger automatiquement les nouveaux APK", automatic) {
@@ -197,6 +207,74 @@ index 0000000..c9296c1
 +            }
 +        }
 +        DroiUpdates.check(this)
++    }
++
++    @Composable
++    private fun DesktopComponents() {
++        var family by rememberSaveable { mutableStateOf("fex") }
++        var expanded by remember { mutableStateOf(false) }
++        LaunchedEffect(Unit) {
++            protons.refreshProtons()
++            components.refreshComponents()
++            components.refreshComponentCatalog(false)
++        }
++        SettingsGroup("Installer Proton") {
++            if (SessionState.running) Text("Ferme la session Ubuntu pour installer Proton.")
++            for (row in protons.protonRows.filter { it.id in setOf("droiddeck", "ge", "cachyos") }) {
++                Button(onClick = { protons.installProton(row.id) },
++                    enabled = protons.protonBusyId == null && !SessionState.running) {
++                    Text(row.name + (row.installed?.let { " · $it" } ?: " · Installer"))
++                }
++            }
++            protons.protonStage?.let { stage ->
++                Text(if (protons.protonPercent < 0) stage else "$stage · ${protons.protonPercent} %")
++            }
++            protons.protonProblem?.let { Text(it) }
++        }
++        val snapshot = components.compSnapshot
++        val selected = snapshot?.protons?.find { it.proton.id == components.compProton }
++        SettingsGroup("Proton par défaut") {
++            snapshot?.protons.orEmpty().forEach { view ->
++                MenuItem(view.proton.name, view == selected) { components.chooseProton(view.proton.id) }
++            }
++        }
++        SettingsGroup("Composants de compatibilité") {
++            val families = ComponentsManager.COMPONENTS
++            TabStrip(families.map { ComponentsManager.LABEL.getValue(it) }, families.indexOf(family), {
++                family = families[it]
++                expanded = false
++            })
++            TextButton(onClick = { components.refreshComponentCatalog() }, enabled = !components.compChecking) {
++                Text(if (components.compChecking) "Chargement…" else "Actualiser le catalogue")
++            }
++            val entries = ComponentsManager.forTool(family, selected?.proton?.dir?.name,
++                components.compCatalog.filter { it.comp == family }) { it.file }
++            TextButton(onClick = { expanded = !expanded }) { Text("Versions disponibles (${entries.size})") }
++            if (expanded) entries.forEach { item ->
++                val pct = components.compDownloads[item.file]
++                val stored = snapshot?.packages?.any { it.file == item.file } == true
++                TextButton(onClick = { components.downloadComponent(item) }, enabled = pct == null && !stored) {
++                    Text(item.file + when {
++                        stored -> " · Téléchargé"
++                        pct == null -> ""
++                        pct < 0 -> " · En cours…"
++                        else -> " · $pct %"
++                    })
++                }
++            }
++            if (selected != null) {
++                val packages = ComponentsManager.forTool(family, selected.proton.dir.name,
++                    snapshot?.packages.orEmpty().filter { it.comp == family }) { it.file }
++                packages.forEach { pkg ->
++                    val state = selected.components[family]
++                    MenuItem(pkg.version, state?.activeFile == pkg.file, detail = "Appliquer à ${selected.proton.name}") {
++                        components.componentAction("Appliquer ${pkg.version}") {
++                            ComponentsManager.swap(this@DesktopLauncherActivity, selected.proton.id, pkg.file)
++                        }
++                    }
++                }
++            }
++        }
 +    }
 +
 +    private fun launchUbuntu() {
