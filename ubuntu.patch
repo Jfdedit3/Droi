@@ -629,7 +629,20 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt 
 index 9904584..d877c44 100644
 --- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
 +++ b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
-@@ -811,6 +811,20 @@ class SessionService : Service() {
+@@ -740,7 +740,10 @@ class SessionService : Service() {
+         val binds = sessionBinds(controllersOn, fakeInputDir, sessionDir, guest, sessionRoot, runtimeDir)
+-        val nativeUserland = com.droiddeck.launcher.runtime.NativeGuest.enabled(this)
++        // The native LD_PRELOAD path translator cannot work for statically linked Codex.
++        // Run the Ubuntu desktop, its terminals, and helpers under PRoot instead.
++        val nativeUserland = SessionState.mode != MODE_DESKTOP &&
++            com.droiddeck.launcher.runtime.NativeGuest.enabled(this)
+         synchronized(stopLock) {
+             if (gen == sessionGen && SessionState.running) com.droiddeck.launcher.runtime.NativeGuest.sessionMode = nativeUserland
+         }
+-        val fastPathKey = if (ProotFastPath.enabled(this)) {
++        val fastPathKey = if (!nativeUserland && ProotFastPath.enabled(this)) {
+             val prootBinds = LinuxRuntime.binds(
+@@ -811,6 +814,20 @@ class SessionService : Service() {
          if (SessionState.mode == MODE_DESKTOP) {
              runCatching { com.droiddeck.launcher.runtime.DesktopLanguage.ensure(this, com.droiddeck.launcher.core.AppLanguage.effective(this)) }
                  .onFailure { Log.w(TAG, "desktop language pack: $it") }
