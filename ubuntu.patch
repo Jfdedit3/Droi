@@ -470,6 +470,144 @@ index 9904584..d877c44 100644
          }
  
          val networkLink = LinuxNetworkLinkComponent(this, root)
+diff --git a/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt b/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
+index b2bc10c..4ea7e51 100644
+--- a/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
++++ b/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
+@@ -14,6 +14,7 @@ internal enum class SessionDrawerPage(val firstControl: String) {
+     EFFECTS("look"),
+     GAMES("anisotropy"),
+     AGENT("agent-input"),
++    WINE("wine-list"),
+     SESSION("suspend"),
+     MORE("more-edit"),
+     VR("steamvr"),
+diff --git a/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt b/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt
+index d4b22a2..9650d8d 100644
+--- a/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt
++++ b/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt
+@@ -171,6 +171,7 @@ import com.droiddeck.launcher.input.TouchGestureConfig.Companion.MOUSE_BEHAVIOR_
+ import com.droiddeck.launcher.input.TouchGestureConfig.Companion.MOUSE_BEHAVIOR_HOLD
+ import com.droiddeck.launcher.input.TouchGestureConfig.Companion.MOUSE_BEHAVIOR_NONE
+ import kotlinx.coroutines.flow.collect
++import androidx.compose.material.icons.outlined.List
+ import java.util.Locale
+ 
+ internal val SessionDrawerPage.title: Int get() = when (this) {
+@@ -183,6 +184,7 @@ internal val SessionDrawerPage.title: Int get() = when (this) {
+     SessionDrawerPage.GAMES -> R.string.game_settings_title
+     SessionDrawerPage.AGENT -> R.string.rail_agent
+     SessionDrawerPage.SESSION -> R.string.mode_session
++    SessionDrawerPage.WINE -> R.string.drawer_wine_processes
+     SessionDrawerPage.MORE -> R.string.drawer_page_more
+ }
+ 
+@@ -196,6 +198,7 @@ internal val SessionDrawerPage.icon get() = when (this) {
+     SessionDrawerPage.GAMES -> Icons.Outlined.Layers
+     SessionDrawerPage.AGENT -> Icons.Outlined.Terminal
+     SessionDrawerPage.SESSION -> Icons.Outlined.Settings
++    SessionDrawerPage.WINE -> Icons.Outlined.List
+     SessionDrawerPage.MORE -> Icons.Outlined.MoreHoriz
+ }
+ 
+@@ -914,6 +917,7 @@ internal fun SessionDrawer(open: Boolean, requestedPage: SessionDrawerPage, cont
+                                 track = { key -> focus.track(page, key) },
+                             )
+                         }
++                        SessionDrawerPage.WINE -> if (open) WineProcessPage(focus.track(page, "wine-list")) else Unit
+                         SessionDrawerPage.AGENT -> Unit
+                         SessionDrawerPage.MORE -> DrawerMorePage(host, pages.inMore(), { host.open = null; onPageChange(it) }, { host.open = null; managing = true }) { key -> focus.track(page, key) }
+                         SessionDrawerPage.SESSION -> {
+diff --git a/app/src/main/java/com/droiddeck/launcher/ui/WineProcessPage.kt b/app/src/main/java/com/droiddeck/launcher/ui/WineProcessPage.kt
+new file mode 100644
+index 0000000..99e82a2
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/ui/WineProcessPage.kt
+@@ -0,0 +1,62 @@
++package com.droiddeck.launcher.ui
++
++import android.os.Process
++import android.system.Os
++import androidx.compose.foundation.focusable
++import androidx.compose.foundation.layout.Column
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.produceState
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.res.stringResource
++import com.droiddeck.launcher.R
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.withContext
++import java.io.File
++
++private fun processList(): List<Pair<Int, String>> {
++    val uid = Process.myUid()
++    val processes = mutableListOf<Pair<Int, String>>()
++    for (dir in File("/proc").listFiles().orEmpty()) {
++        val pid = dir.name.toIntOrNull() ?: continue
++        val name = runCatching {
++            if (Os.stat(dir.path).st_uid != uid) return@runCatching null
++            val args = File(dir, "cmdline").readText().split('\u0000')
++            val program = args.first().substringAfterLast('/').substringAfterLast('\\')
++            val comm = File(dir, "comm").readText().trim()
++            when {
++                program.endsWith(".exe", true) -> program
++                program in wineLoaders -> args.drop(1).firstOrNull { it.endsWith(".exe", true) }
++                    ?.substringAfterLast('/')?.substringAfterLast('\\') ?: program
++                comm.endsWith(".exe", true) || comm in wineLoaders -> comm
++                else -> null
++            }
++        }.getOrNull()
++        if (name != null) processes.add(pid to name)
++    }
++    return processes.sortedBy { it.first }
++}
++
++private val wineLoaders = setOf("wine", "wine64", "wineserver", "wineserver64", "wine-preloader", "wine64-preloader")
++
++@Composable
++internal fun WineProcessPage(modifier: Modifier) {
++    val processes by produceState<List<Pair<Int, String>>?>(null) {
++        while (true) {
++            value = withContext(Dispatchers.IO) { processList() }
++            delay(1000)
++        }
++    }
++    SettingsGroup(stringResource(R.string.drawer_wine_processes)) {
++        Column(modifier.focusable()) {
++            val rows = processes
++            when {
++                rows == null -> Text("…")
++                rows.isEmpty() -> Text(stringResource(R.string.drawer_wine_empty))
++                else -> rows.forEach { (pid, name) -> SettingsRow(name, "PID $pid") {} }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/res/values-fr/strings.xml b/app/src/main/res/values-fr/strings.xml
+index c735507..3c3a9ff 100644
+--- a/app/src/main/res/values-fr/strings.xml
++++ b/app/src/main/res/values-fr/strings.xml
+@@ -4119,4 +4119,6 @@
+     <string name="theme_custom_error">Erreur</string>
+     <string name="hud_only_during_game">Afficher le HUD uniquement pendant une partie</string>
+     <string name="hud_only_during_game_hint">Masquer le HUD lorsqu’aucune image du jeu n’est détectée.</string>
++    <string name="drawer_wine_processes">Processus Wine</string>
++    <string name="drawer_wine_empty">Aucun processus Wine en cours</string>
+ </resources>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 36a782b..e8d65aa 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -4388,4 +4388,6 @@
+     <string name="hud_only_during_game_hint">Hide the HUD when no game frames are detected.</string>
+     <string name="onboarding_button_getting_ready">Getting ready · %1$d%%</string>
+     <string name="onboarding_button_finish">Finish setup · %1$d%%</string>
++    <string name="drawer_wine_processes">Wine processes</string>
++    <string name="drawer_wine_empty">No Wine processes running</string>
+ </resources>
 diff --git a/app/src/main/res/xml/log_share_paths.xml b/app/src/main/res/xml/log_share_paths.xml
 index 9bed7b6..4d49322 100644
 --- a/app/src/main/res/xml/log_share_paths.xml
