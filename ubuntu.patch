@@ -1,5 +1,5 @@
 diff --git a/app/build.gradle b/app/build.gradle
-index f2cb401..83081a2 100644
+index f2cb401..231a14f 100644
 --- a/app/build.gradle
 +++ b/app/build.gradle
 @@ -129,11 +129,11 @@ android {
@@ -25,6 +25,14 @@ index f2cb401..83081a2 100644
          ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:<dir>droiddeck-xbox:<dir>droiddeck-comet:<dir>droiddeck-ubisoft:<dir>droiddeck-rockstar:<dir>droiddeck-dirt:<dir>droiddeck-epic:<dir>directaudio:<dir>hybris'
      }
  
+@@ -394,6 +395,7 @@ dependencies {
+     debugImplementation 'androidx.compose.ui:ui-test-manifest'
+     implementation 'androidx.activity:activity-compose:1.8.2'
+     implementation 'androidx.compose.material:material-icons-extended'
++    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+     implementation 'io.coil-kt:coil-compose:2.6.0'
+     implementation 'io.noties.markwon:core:4.6.2'
+     implementation 'io.noties.markwon:ext-strikethrough:4.6.2'
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
 index 55b75d3..1a8456e 100644
 --- a/app/src/main/AndroidManifest.xml
@@ -202,10 +210,10 @@ index 0000000..c9296c1
 +}
 diff --git a/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
 new file mode 100644
-index 0000000..8243692
+index 0000000..3a10191
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,208 @@
 +package com.droiddeck.launcher
 +
 +import android.app.DownloadManager
@@ -214,6 +222,14 @@ index 0000000..8243692
 +import com.droiddeck.launcher.core.Downloader
 +import kotlinx.coroutines.flow.MutableStateFlow
 +import java.io.File
++import java.io.RandomAccessFile
++import com.droiddeck.launcher.core.Hashes
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.async
++import kotlinx.coroutines.awaitAll
++import kotlinx.coroutines.runBlocking
++import okhttp3.OkHttpClient
++import okhttp3.Request
 +import android.content.BroadcastReceiver
 +import android.content.Intent
 +import android.util.Log
@@ -321,6 +337,55 @@ index 0000000..8243692
 +        }
 +    }
 +
++    private val client = OkHttpClient()
++
++    private fun parallelDownload(url: String, target: File, release: Release): Boolean {
++        if (release.size < 8L * 1024 * 1024 || target.exists()) return false
++        val staging = File(target.parentFile, "${target.name}.ranges")
++        try {
++            RandomAccessFile(staging, "rw").use { it.setLength(release.size) }
++            val progressLock = Any()
++            var received = 0L
++            runBlocking {
++                (0 until 4).map { index ->
++                    async(Dispatchers.IO) {
++                        val start = release.size * index / 4
++                        val end = release.size * (index + 1) / 4 - 1
++                        val request = Request.Builder().url(url)
++                            .header("Range", "bytes=$start-$end")
++                            .header("Accept-Encoding", "identity").build()
++                        client.newCall(request).execute().use { response ->
++                            check(response.code == 206 &&
++                                response.header("Content-Range") == "bytes $start-$end/${release.size}")
++                            val input = checkNotNull(response.body).byteStream()
++                            RandomAccessFile(staging, "rw").use { output ->
++                                output.seek(start)
++                                var remaining = end - start + 1
++                                val buffer = ByteArray(128 * 1024)
++                                while (remaining > 0) {
++                                    val count = input.read(buffer, 0, minOf(remaining, buffer.size.toLong()).toInt())
++                                    check(count > 0)
++                                    output.write(buffer, 0, count)
++                                    remaining -= count
++                                    synchronized(progressLock) {
++                                        received += count
++                                        status.value = "Téléchargement : ${received * 100 / release.size} %"
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }.awaitAll()
++            }
++            return Hashes.sha256(staging).equals(release.digest, true) && staging.renameTo(target)
++        } catch (error: Exception) {
++            Log.i("DroiUpdates", "Retrying with a single transfer", error)
++            return false
++        } finally {
++            staging.delete()
++        }
++    }
++
 +    private fun download(context: Context, release: Release): String {
 +        val target = apk(context, release.version)
 +        if (ready.value == release.version && target.isFile) return "Mise à jour prête."
@@ -329,7 +394,7 @@ index 0000000..8243692
 +        val partial = File(folder, "${release.version}.part")
 +        status.value = "Téléchargement…"
 +        val url = "https://github.com/$REPO/releases/download/${release.tag}/$ASSET"
-+        val ok = Downloader.downloadFile(url, partial, true, release.digest) { fraction ->
++        val ok = parallelDownload(url, partial, release) || Downloader.downloadFile(url, partial, true, release.digest) { fraction ->
 +            if (fraction in 0f..1f) status.value = "Téléchargement : ${(fraction * 100).toInt()} %"
 +        }
 +        check(ok && partial.length() == release.size && partial.renameTo(target))
@@ -434,6 +499,33 @@ index ee1e3a3..cab1289 100644
  update-mime-database /usr/share/mime >/dev/null 2>&1 &
  [ -f /usr/share/icons/hicolor/icon-theme.cache ] || gtk-update-icon-cache -q -t /usr/share/icons/hicolor 2>/dev/null &
  [ -f /usr/share/glib-2.0/schemas/gschemas.compiled ] || glib-compile-schemas /usr/share/glib-2.0/schemas 2>/dev/null
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
+index c6ba899..2afda26 100755
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
+@@ -1493,8 +1493,8 @@ def system_graphics_launch(command, env):
+             if not path.is_file() or not path.stat().st_size:
+                 raise SystemGraphicsError("missing system Vulkan component: %s" % name)
+         wrapper = directory / "run-proton.py"
+-        if not os.access(wrapper, os.X_OK):
+-            raise SystemGraphicsError("system Vulkan Proton wrapper is not executable")
++        if not os.access(wrapper, os.R_OK):
++            raise SystemGraphicsError("system Vulkan Proton wrapper is not readable")
+     except OSError as error:
+         raise SystemGraphicsError("system Vulkan component is unreadable: %s" % error) from error
+     result = dict(env)
+@@ -1510,7 +1510,10 @@ def system_graphics_launch(command, env):
+     })
+     for name in ("DISABLE_WSI_LAYER", "PROTON_USE_WINED3D", "ENABLE_VK_LAYER_VALVE_steam_fossilize_1"):
+         result.pop(name, None)
+-    return [str(wrapper), *command], result
++    if game_id(env) == "678800" and "VK_LAYER_DROIDDECK_xclipse" in layers.split(":"):
++        # SAS4 initializes Wine OpenGL before its game window. Zink fails on Xclipse.
++        result.update(LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", MESA_LOADER_DRIVER_OVERRIDE="swrast")
++    return ["/usr/bin/python3", str(wrapper), *command], result
+ 
+ 
+ def game_logs(command, env, app_id, now=None):
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install b/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
 index bbacb76..01397ee 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-steam-install
@@ -492,33 +584,6 @@ index bbacb76..01397ee 100755
  rm -rf "$parts"
  if [ -n "$fallback" ]; then
    echo "$stable_channel" > "$channel_state"
-diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
-index c6ba899..2afda26 100755
---- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
-+++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
-@@ -1493,8 +1493,8 @@ def system_graphics_launch(command, env):
-             if not path.is_file() or not path.stat().st_size:
-                 raise SystemGraphicsError("missing system Vulkan component: %s" % name)
-         wrapper = directory / "run-proton.py"
--        if not os.access(wrapper, os.X_OK):
--            raise SystemGraphicsError("system Vulkan Proton wrapper is not executable")
-+        if not os.access(wrapper, os.R_OK):
-+            raise SystemGraphicsError("system Vulkan Proton wrapper is not readable")
-     except OSError as error:
-         raise SystemGraphicsError("system Vulkan component is unreadable: %s" % error) from error
-     result = dict(env)
-@@ -1510,7 +1510,10 @@ def system_graphics_launch(command, env):
-     })
-     for name in ("DISABLE_WSI_LAYER", "PROTON_USE_WINED3D", "ENABLE_VK_LAYER_VALVE_steam_fossilize_1"):
-         result.pop(name, None)
--    return [str(wrapper), *command], result
-+    if game_id(env) == "678800" and "VK_LAYER_DROIDDECK_xclipse" in layers.split(":"):
-+        # SAS4 initializes Wine OpenGL before its game window. Zink fails on Xclipse.
-+        result.update(LIBGL_ALWAYS_SOFTWARE="1", GALLIUM_DRIVER="llvmpipe", MESA_LOADER_DRIVER_OVERRIDE="swrast")
-+    return ["/usr/bin/python3", str(wrapper), *command], result
- 
- 
- def game_logs(command, env, app_id, now=None):
 diff --git a/tools/tests/test_game_environment.py b/tools/tests/test_game_environment.py
 index 8c58423..c204009 100644
 --- a/tools/tests/test_game_environment.py
