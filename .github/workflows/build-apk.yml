@@ -508,6 +508,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/powervr/fetch.py
+          # Verify compressed pack integrity before spending time compiling the APK.
+          for pack in app/build/packs/*.tar.zst; do
+            zstd -tq "$pack" || { echo "Corrupt pack: $pack" >&2; exit 1; }
+          done
           python3 tools/release/runtime_inputs.py record
           export DROI_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))
           export DROI_VERSION_NAME="0.7.1-droi.$GITHUB_RUN_NUMBER"

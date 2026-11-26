@@ -399,3 +399,17 @@ diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-debug b/tools/li
          yield env, None
          return
      folder = session_debug_dir(env)
+diff --git a/tools/release/runtime_inputs.py b/tools/release/runtime_inputs.py
+--- a/tools/release/runtime_inputs.py
++++ b/tools/release/runtime_inputs.py
+@@ -173,6 +173,10 @@
+     try:
+         with tarfile.open(fileobj=process.stdout, mode='r|') as archive:
+             names = {member.name.removeprefix('./') for member in archive}
++        # Tar iteration stops at the end marker, before zstd necessarily reaches EOF.
++        # Drain padding and the remainder of the compressed stream to avoid SIGPIPE.
++        while process.stdout.read(1024 * 1024):
++            pass
+     finally:
+         process.stdout.close()
+     if process.wait():
