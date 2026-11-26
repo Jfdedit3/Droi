@@ -112,6 +112,38 @@ class WindowsLauncherTests(unittest.TestCase):
                 self.assertEqual(env["DROI_PREPARE_PREFIX"], "1")
                 self.assertEqual(env["DD_DESKTOP_GPU"], "off")
 
+    def test_wine_process_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = Path(tmp)
+            (proc / "self").mkdir()
+            (proc / "self/status").write_text("Uid:\t1234 1234 1234 1234\n")
+            def fake(pid, uid, comm, env=b""):
+                folder = proc / str(pid)
+                folder.mkdir()
+                (folder / "status").write_text("Uid:\t%d %d %d %d\n" % ((uid,) * 4))
+                (folder / "stat").write_text("%d (%s) S " % (pid, comm) + " ".join(["0"] * 18 + ["321"]))
+                (folder / "comm").write_text(comm)
+                (folder / "cmdline").write_bytes(comm.encode() + b"\0")
+                (folder / "environ").write_bytes(env)
+            fake(99901, 1234, "wineserver", b"WINEPREFIX=/tmp/prefix\0")
+            fake(99902, 1234, "game.exe", b"WINEPREFIX=/tmp/prefix\0")
+            fake(99903, 5678, "wineserver")
+            fake(99904, 1234, "unrelated.exe")
+            info = g["process_info"]
+            self.assertEqual(info(99901, proc)["start"], "321")
+            self.assertTrue(info(99901, proc)["server"])
+            self.assertEqual(info(99902, proc)["prefix"], "/tmp/prefix")
+            self.assertIsNone(info(99903, proc))
+            self.assertIsNone(info(99904, proc))
+
+    def test_stop_only_selected_wine_process(self):
+        row = {"pid": 123, "start": "42", "name": "wine", "prefix": "/tmp/a", "server": False, "token": ""}
+        other = dict(row, pid=456)
+        stop = unittest.mock.Mock(return_value=0)
+        with patch.dict(g, {"wine_processes": lambda: [row, other], "stop_wine": stop}):
+            self.assertEqual(main(["--stop-wine", "123", "--yes"]), 0)
+            stop.assert_called_once_with([row], True)
+
     def test_msi_wine_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
             msi = Path(tmp) / "setup.msi"
