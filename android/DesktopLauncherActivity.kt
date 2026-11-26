@@ -15,6 +15,9 @@ import com.droiddeck.launcher.ui.MenuItem
 import com.droiddeck.launcher.ui.SettingsGroup
 import com.droiddeck.launcher.ui.TabStrip
 import android.content.Intent
+import android.content.Context
+import java.io.File
+import com.droiddeck.launcher.runtime.LinuxRuntime
 import com.droiddeck.launcher.session.ComponentsManager
 import com.droiddeck.launcher.session.SessionState
 import android.os.Handler
@@ -24,6 +27,34 @@ import com.droiddeck.launcher.gpu.SystemVulkanDriver
 import android.os.Bundle
 import android.widget.Toast
 import com.droiddeck.launcher.session.SessionService
+
+internal enum class DroiDesktop(val id: String, val label: String, val description: String,
+                                val executables: List<String>, val packages: List<String>) {
+    PLASMA("plasma", "KDE Plasma", "Interface complète · Wayland", emptyList(), emptyList()),
+    XFCE("xfce", "XFCE", "Bureau léger · X11", listOf("xfce4-session", "xfwm4", "xfce4-panel", "xfdesktop", "thunar", "xfce4-terminal"),
+        listOf("xfce4", "xfce4-terminal")),
+    LXQT("lxqt", "LXQt", "Bureau léger · Qt / X11", listOf("startlxqt", "lxqt-session", "lxqt-panel", "pcmanfm-qt", "openbox", "qterminal"),
+        listOf("lxqt-core", "openbox", "qterminal"));
+
+    fun installed(context: Context): Boolean {
+        if (this == PLASMA) return com.droiddeck.launcher.runtime.DesktopCatalog.desktopInstalled(context)
+        val root = LinuxRuntime.rootDir(context)
+        return (executables + listOf("Xwayland", "xdpyinfo", "xauth", "mcookie")).all {
+            File(root, "usr/bin/$it").isFile
+        }
+    }
+
+    companion object {
+        fun selected(context: Context): DroiDesktop {
+            val id = context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE).getString("environment", "plasma")
+            return values().firstOrNull { it.id == id } ?: PLASMA
+        }
+        fun select(context: Context, desktop: DroiDesktop) {
+            context.getSharedPreferences("droi-desktop", Context.MODE_PRIVATE).edit()
+                .putString("environment", desktop.id).apply()
+        }
+    }
+}
 
 class DesktopLauncherActivity : ComponentActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -35,6 +66,8 @@ class DesktopLauncherActivity : ComponentActivity() {
         setContent {
             DroidDeckTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
+                var desktopChoice by rememberSaveable { mutableStateOf(false) }
+                var selectedId by rememberSaveable { mutableStateOf(DroiDesktop.selected(this@DesktopLauncherActivity).id) }
                 var automatic by remember { mutableStateOf(DroiUpdates.isEnabled(this)) }
                 androidx.activity.compose.BackHandler(enabled = tab != 0) { tab = 0 }
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -44,7 +77,46 @@ class DesktopLauncherActivity : ComponentActivity() {
                         TabStrip(listOf("Bureaux", "Composants", "Paramètres"), tab, { tab = it })
                         if (tab == 0) {
                             SettingsGroup("Bureaux Linux") {
-                                MenuItem("Ubuntu", false, detail = "KDE Plasma") { launchUbuntu() }
+                                val selected = DroiDesktop.selected(this@DesktopLauncherActivity)
+                                MenuItem("Ubuntu", false, detail = selected.label) {
+                                    if (SessionState.running) launchUbuntu() else desktopChoice = true
+                                }
+                                Text("Choisis ton environnement de bureau avant le lancement.")
+                                if (desktopChoice) {
+                                    AlertDialog(
+                                        onDismissRequest = { desktopChoice = false },
+                                        title = { Text("Interface Ubuntu") },
+                                        text = {
+                                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                DroiDesktop.values().forEach { choice ->
+                                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                                        RadioButton(selected = selectedId == choice.id, onClick = { selectedId = choice.id })
+                                                        Column(Modifier.weight(1f)) {
+                                                            Text(choice.label, style = MaterialTheme.typography.titleMedium)
+                                                            Text(choice.description, style = MaterialTheme.typography.bodySmall)
+                                                            Text(if (choice.installed(this@DesktopLauncherActivity)) "Installé" else "Installation au premier lancement",
+                                                                style = MaterialTheme.typography.bodySmall)
+                                                        }
+                                                    }
+                                                }
+                                                Text("Tes fichiers, applications et préfixes Wine sont conservés.", style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        },
+                                        confirmButton = {
+                                            Button(onClick = {
+                                                val choice = DroiDesktop.values().firstOrNull { it.id == selectedId } ?: DroiDesktop.PLASMA
+                                                if (!SessionState.running && SessionState.installing == null) {
+                                                    DroiDesktop.select(this@DesktopLauncherActivity, choice)
+                                                    desktopChoice = false
+                                                    launchUbuntu()
+                                                } else {
+                                                    Toast.makeText(this@DesktopLauncherActivity, "Une session ou installation est déjà en cours.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }) { Text("Lancer Ubuntu") }
+                                        },
+                                        dismissButton = { TextButton(onClick = { desktopChoice = false }) { Text("Annuler") } },
+                                    )
+                                }
                             }
                         } else if (tab == 1) {
                             DesktopComponents()

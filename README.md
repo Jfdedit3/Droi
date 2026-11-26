@@ -57,3 +57,7 @@ Le menu KDE > Système > Droi - Processus Wine ouvre le gestionnaire. Il permet 
 ### Accélération générale des jeux
 
 Le choix PRoot Fast Path utilise désormais le mode réel de la session, pas la préférence de mode natif. Le bureau reste sous PRoot pour les exécutables statiques ; lorsque le pack PRoot compatible, seccomp et la préférence d'accélération le permettent, le fast path est activé. Les lancements Droi rapides évitent également le miroir des traces Wine, tout en conservant stderr et le mode diagnostic. Le premier démarrage d'un préfixe et la traduction x86/ARM64 restent nécessaires. Vérifier la ligne `proot: fast path on` dans app.log, puis exécuter `droi-doctor` après installation. Aucun délai universel de démarrage n'est garanti.
+
+### Choix de l'environnement de bureau
+
+Au lancement d'Ubuntu, choisir KDE Plasma (Wayland, par défaut), XFCE ou LXQt (X11 dans Xwayland plein écran). Les deux alternatives sont installées via APT au premier lancement, sans supprimer KDE, et partagent la même racine Ubuntu, le même /root, les logiciels et préfixes Wine. Fermer la session en cours avant de changer. L'installation nécessite Internet et de l'espace disque ; les journaux d'installation sont conservés. XFCE et LXQt utilisent Xwayland avec présentation shm et sont expérimentaux sur Android ; si leur démarrage retourne une erreur, Droi tente Plasma. Le mode bureau secondaire conserve Plasma.

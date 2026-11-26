@@ -254,6 +254,18 @@ index 9904584..d877c44 100644
          }
  
          val networkLink = LinuxNetworkLinkComponent(this, root)
+@@ -989,8 +1006,9 @@
+         guest.add("USER=root")
+         guest.add("PATH=" + LinuxRuntime.GUEST_PATH)
+         guest.add("TERM=xterm-256color")
+-        if (SessionState.mode == MODE_DESKTOP) {
+-            val appLocale = com.droiddeck.launcher.core.AppLanguage.effective(this)
++        if (SessionState.mode == MODE_DESKTOP) {
++            guest.add("DROI_DESKTOP_ENV=" + com.droiddeck.launcher.DroiDesktop.selected(this).id)
++            val appLocale = com.droiddeck.launcher.core.AppLanguage.effective(this)
+             guest.add("LANG=" + DesktopLocale.lang(appLocale))
+             DesktopLocale.language(appLocale)?.let { guest.add("LANGUAGE=$it") }
+         } else {
 diff --git a/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt b/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
 index b2bc10c..4ea7e51 100644
 --- a/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
@@ -419,3 +431,73 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/runtime/ProotFastPath.kt b
          val source = LinuxRuntime.prootSource(context)
          val on = allows(preference, noSeccomp, source, nativeUserland)
          if (preference && !noSeccomp && !nativeUserland && !on)
+diff --git a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt b/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt
+--- a/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt
++++ b/app/src/main/java/com/droiddeck/launcher/SessionActivity.kt
+@@ -1020,7 +1020,10 @@
+             val protonUser = (intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM) == SessionService.MODE_STEAM ||
+                 program == com.droiddeck.launcher.runtime.BattleNet.PROGRAM || program == com.droiddeck.launcher.session.NoSteamLaunch.PROTON_RUN
+             val needProton = protonUser && com.droiddeck.launcher.runtime.DesktopCatalog.protonSeedNeeded(this)
+-            if (needRuntime || needResume || needDesktop || needProton) installThenStart(needRuntime, needDesktop, needProton, needResume)
++            val alternative = if (intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_DESKTOP)
++                DroiDesktop.selected(this).takeIf { it != DroiDesktop.PLASMA && !it.installed(this) } else null
++            if (needRuntime || needResume || needDesktop || needProton || alternative != null)
++                installThenStart(needRuntime, needDesktop, needProton, needResume, alternative)
+         }
+         hud = DroidDeckHudHost(this)
+         hud.onConfigChanged = { hudConfig = DroidDeckHudConfig.load(this) }
+@@ -2680,7 +2683,8 @@
+     private val installingRuntime get() = localInstalling || SessionState.installing != null
+     private var repairOffered by mutableStateOf(false)
+ 
+-    private fun installThenStart(runtime: Boolean, desktop: Boolean, proton: Boolean = false, resume: Boolean = false) {
++    private fun installThenStart(runtime: Boolean, desktop: Boolean, proton: Boolean = false, resume: Boolean = false,
++                                 alternative: DroiDesktop? = null) {
+         if (SessionState.stopRequested) return
+         val worker = Any()
+         activeInstallWorker = worker
+@@ -2721,7 +2725,12 @@
+                 problem = installDesktop()
+                 if (problem == null) SessionEvents.record("desktop.ready") else failedComponent = "desktop"
+             }
+-            if (problem == null && proton && !SessionState.stopRequested) {
++            if (problem == null && alternative != null && !SessionState.stopRequested) {
++                if (activeInstallWorker === worker) SessionState.installing = "desktop"
++                problem = installDroiDesktop(alternative)
++                if (problem == null) SessionEvents.record("desktop.alternative.ready") else failedComponent = "desktop"
++            }
++            if (problem == null && proton && !SessionState.stopRequested) {
+                 if (activeInstallWorker === worker) SessionState.installing = "proton"
+                 SessionEvents.transition(SessionPhase.INSTALLING_RUNTIME, "proton.installing", mapOf("component" to "proton"))
+                 val protonProblem = installProton()
+@@ -2818,7 +2827,29 @@
+         return getString(R.string.session_runtime_install_failed)
+     }
+ 
+-    private fun installDesktop(): String? {
++    private fun installDroiDesktop(choice: DroiDesktop): String? {
++        if (choice.installed(this)) return null
++        uiHandler.post {
++            loading.percent = -1
++            loading.say("Installation de ${choice.label}…", LoadingState.Topic.RUNTIME, readable = true)
++        }
++        val packages = choice.packages + listOf("xwayland", "x11-utils", "xauth", "util-linux")
++        val command = listOf("/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "TMPDIR=/tmp", "/bin/bash", "-c",
++            "apt-get update && apt-get install -y --no-install-recommends " + packages.joinToString(" "))
++        return try {
++            val code = com.droiddeck.launcher.runtime.GuestCommand.run(this, command, fakeRoot = true,
++                logName = "droi-desktop-" + choice.id) { line ->
++                if (line.startsWith("Get:") || line.startsWith("Unpacking") || line.startsWith("Setting up"))
++                    uiHandler.post { loading.say(line.take(180), LoadingState.Topic.RUNTIME, readable = true) }
++            }
++            if (code == 0 && choice.installed(this)) null
++            else "Installation de ${choice.label} échouée (code $code). Vérifie les journaux ou sélectionne KDE Plasma."
++        } catch (error: Exception) {
++            "Installation de ${choice.label} impossible : ${error.message ?: "erreur inconnue"}"
++        }
++    }
++
++    private fun installDesktop(): String? {
+         uiHandler.post { loading.percent = -1; loading.say(getString(DESKTOP_LINES.downloading), DESKTOP_LINES.topic, readable = true) }
+         val entry = com.droiddeck.launcher.runtime.DesktopCatalog.desktopEntry(this)
+         val cancellation = com.droiddeck.launcher.core.Downloader.Cancellation { SessionState.stopRequested }

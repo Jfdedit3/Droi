@@ -19,6 +19,71 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
+@@ -224,11 +227,59 @@
+ if ! /usr/local/bin/droiddeck-pipewire start; then
+   echo "== pipewire: not running; screen capture has no picture"
+ fi
+-echo "== droiddeck-desktop: Plasma on $WAYLAND_DISPLAY"
+-dbus-run-session -- startplasma-wayland
+-rc=$?
+-/usr/local/bin/droiddeck-pipewire stop
+-echo "== droiddeck-desktop: Plasma ended ($rc)"
++droi_alternative() (
++  export XDG_SESSION_TYPE=x11 QT_QPA_PLATFORM=xcb GDK_BACKEND=x11 SDL_VIDEODRIVER=x11
++  export MOZ_ENABLE_WAYLAND=0
++  unset KDE_FULL_SESSION KDE_SESSION_VERSION KDE_APPLICATIONS_AS_SCOPE
++  case "$1" in
++    xfce) export XDG_CURRENT_DESKTOP=XFCE XDG_SESSION_DESKTOP=xfce DESKTOP_SESSION=xfce; session=xfce4-session ;;
++    lxqt) export XDG_CURRENT_DESKTOP=LXQt XDG_SESSION_DESKTOP=lxqt DESKTOP_SESSION=lxqt; session=startlxqt ;;
++    *) exit 2 ;;
++  esac
++  command -v "$session" >/dev/null && command -v Xwayland >/dev/null && command -v xdpyinfo >/dev/null || exit 127
++  display=
++  for n in 2 3 4 5 6 7 8 9; do
++    if [ ! -e "/tmp/.X$n-lock" ] && [ ! -S "/tmp/.X11-unix/X$n" ]; then display=:$n; break; fi
++  done
++  [ -n "$display" ] || exit 1
++  export DISPLAY=$display
++  export XAUTHORITY="$(mktemp "$XDG_RUNTIME_DIR/droi-xauth.XXXXXX")" || exit 1
++  chmod 600 "$XAUTHORITY"
++  xauth -f "$XAUTHORITY" add "$DISPLAY" MIT-MAGIC-COOKIE-1 "$(mcookie)" || { rm -f "$XAUTHORITY"; exit 1; }
++  Xwayland "$DISPLAY" -fullscreen -geometry "${DD_WIDTH:-1280}x${DD_HEIGHT:-720}" -shm -noreset -nolisten tcp -auth "$XAUTHORITY" &
++  xpid=$!
++  trap 'kill "$xpid" 2>/dev/null || true; wait "$xpid" 2>/dev/null || true; rm -f "$XAUTHORITY"' EXIT
++  ready=0
++  for n in $(seq 1 80); do
++    kill -0 "$xpid" 2>/dev/null || exit 1
++    if xdpyinfo >/dev/null 2>&1; then ready=1; break; fi
++    sleep 0.1
++  done
++  [ "$ready" = 1 ] || exit 1
++  echo "== droiddeck-desktop: $session on $DISPLAY"
++  dbus-run-session -- "$session"
++)
++
++desktop_choice=${DROI_DESKTOP_ENV:-plasma}
++if [ -n "${DD_BOTTOM_DESKTOP:-}" ]; then desktop_choice=plasma; fi
++case "$desktop_choice" in
++  xfce|lxqt)
++    droi_alternative "$desktop_choice"
++    rc=$?
++    if [ "$rc" -ne 0 ]; then
++      echo "== Droi: $desktop_choice failed ($rc); falling back to Plasma"
++      dbus-run-session -- startplasma-wayland
++      rc=$?
++    fi
++    ;;
++  *)
++    echo "== droiddeck-desktop: Plasma on $WAYLAND_DISPLAY"
++    dbus-run-session -- startplasma-wayland
++    rc=$?
++    ;;
++esac
++/usr/local/bin/droiddeck-pipewire stop
++echo "== droiddeck-desktop: $desktop_choice ended ($rc)"
+ if [ "$rc" -eq 0 ] && [ -z "${DD_BOTTOM_DESKTOP:-}" ]; then
+   /usr/local/bin/droiddeck-steam-launch bigpicture
+   sleep 30
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
 index c6ba899..2afda26 100755
 --- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env
