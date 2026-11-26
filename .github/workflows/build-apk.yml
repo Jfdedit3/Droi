@@ -492,7 +492,7 @@ jobs:
           # Fail CI if the desktop silently falls back to native LD_PRELOAD
           # translation, which cannot translate paths in static ARM64 Codex.
           grep -Fq 'SessionState.mode != MODE_DESKTOP &&' app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
-          grep -Fq 'val fastPathKey = if (!nativeUserland && ProotFastPath.enabled(this))' app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+          grep -Fq 'val fastPathKey = if (ProotFastPath.enabled(this, nativeUserland))' app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
           # Ship the exact fixed native PRoot build inside the APK; the
           # external DroidDeck pack server cannot provide this custom digest.
           install -Dm644 app/build/packs/proot.tar.zst app/src/main/assets/packs/proot.tar.zst
