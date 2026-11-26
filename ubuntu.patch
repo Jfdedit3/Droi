@@ -132,10 +132,10 @@ index 58e7e12..3640fc9 100644
          GpuClockPin.clearLeftover(this)
 diff --git a/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
 new file mode 100644
-index 0000000..1c7835e
+index 0000000..cf7bda8
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,184 @@
 +package com.droiddeck.launcher
 +
 +import androidx.activity.ComponentActivity
@@ -261,6 +261,14 @@ index 0000000..1c7835e
 +            snapshot?.protons.orEmpty().forEach { view ->
 +                MenuItem(view.proton.name, view == selected) { components.chooseProton(view.proton.id) }
 +            }
++        }
++        if (selected != null) {
++            Button(enabled = components.compBusy == null && protons.protonBusyId == null, onClick = {
++                components.componentAction("Composants de ${selected.proton.name}") {
++                    ComponentsManager.downloadForProton(this@DesktopLauncherActivity, selected.proton.dir.name) { _, _ -> }
++                    "Vérification des composants terminée pour ${selected.proton.name}"
++                }
++            }) { Text(components.compBusy ?: "Télécharger les composants compatibles") }
 +        }
 +        SettingsGroup("Composants de compatibilité") {
 +            val families = ComponentsManager.COMPONENTS
@@ -547,6 +555,55 @@ index e2096a6..7d659c4 100644
          if (own != null && runCatching { own.startActivity(context, launch, null) }.isSuccess) return
          // The session task shares the front end's affinity, so without MULTIPLE_TASK the front end lands inside the session's PiP window.
          context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK))
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt b/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt
+index 146509b..c593536 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt
+@@ -1439,6 +1439,30 @@ object ComponentsManager {
+         refresh: () -> List<CatalogItem>,
+     ): CatalogItem? = catalogMatch(cached(), file, release) ?: catalogMatch(refresh(), file, release)
+ 
++    internal fun downloadForProton(context: Context, dir: String, progress: (String, Int) -> Unit) {
++        val proton = protons(context).first { it.dir.name == dir }
++        progress("Recherche des composants pour ${proton.name}", -1)
++        val entries = catalog(context, false).items.ifEmpty { catalog(context, true).items }
++        check(entries.isNotEmpty()) { "Catalogue des composants indisponible" }
++        for (comp in COMPONENTS) {
++            if (!supports(proton, comp) || runtimeManaged(context, comp)) continue
++            val item = if (comp == "dxvk" && hardwareDxvk(context)) {
++                val pinned = pinnedAutoDxvk(context) ?: continue
++                entries.firstOrNull { it.comp == comp && it.file == pinned }
++            } else {
++                val line = if (comp == "fex") ComponentUpdates.fexLine(proton) else {
++                    val ec = arm64ec(context, proton, comp) ?: continue
++                    ComponentUpdates.line(comp, ec)
++                }
++                ComponentUpdates.pick(entries, line, emptySet())
++            } ?: continue
++            if (!isStored(context, item.file)) {
++                download(context, item) { percent -> progress("${proton.name} · ${item.file}", percent) }
++            }
++        }
++    }
++
++    @Synchronized
+     fun download(context: Context, item: CatalogItem, progress: (Int) -> Unit): Package {
+         require(allowedDownload(item.url)) { context.getString(R.string.cmgr_nightlies_only) }
+         require(Hashes.isGithubSha256(item.digest)) { context.getString(R.string.cmgr_list_predates_checksums) }
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt b/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt
+index 2eed240..2c75580 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt
+@@ -379,6 +379,9 @@ object ProtonExtras {
+                         Log.w(TAG, "sync pack for ${tool.name}", t)
+                     }
+                 }
++                val dir = placed ?: return "Proton installé, mais son dossier est introuvable."
++                runCatching { ComponentsManager.downloadForProton(context, dir, onProgress) }
++                    .exceptionOrNull()?.let { return "Proton installé. Téléchargement des composants interrompu : ${it.message}" }
+                 null
+             }
+         } catch (e: Exception) {
 diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
 index 9904584..d877c44 100644
 --- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
