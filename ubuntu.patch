@@ -34,7 +34,7 @@ index f2cb401..231a14f 100644
      implementation 'io.noties.markwon:core:4.6.2'
      implementation 'io.noties.markwon:ext-strikethrough:4.6.2'
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index 55b75d3..1a8456e 100644
+index 55b75d3..760f03d 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
 @@ -74,14 +74,13 @@
@@ -54,13 +54,19 @@ index 55b75d3..1a8456e 100644
  
          <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
          <service android:name=".glasses.LumaRgbCaptureService" android:exported="false"
-@@ -142,33 +141,18 @@
+@@ -141,34 +140,19 @@
+             android:theme="@style/AppTheme" />
  
          <activity
++            android:name=".DesktopLauncherActivity"
++            android:exported="false"
++            android:label="Droi Desktop" />
++
++        <!-- Existing notification and shortcut intents also open the desktop launcher. -->
++        <activity-alias
              android:name=".FrontEndActivity"
 -            android:exported="true"
-+            android:exported="false"
-             android:screenOrientation="user"
+-            android:screenOrientation="user"
 -            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation">
 -            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp" />
 -            <intent-filter>
@@ -82,12 +88,8 @@ index 55b75d3..1a8456e 100644
 -                <category android:name="android.intent.category.CAR_LAUNCHER" />
 -            </intent-filter>
 -        </activity>
-+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation" />
-+
-+        <activity
-+            android:name=".DesktopLauncherActivity"
-+            android:exported="false"
-+            android:label="Droi Desktop" />
++            android:targetActivity=".DesktopLauncherActivity"
++            android:exported="false" />
  
          <activity-alias
              android:name=".MainActivity"
@@ -422,6 +424,27 @@ index 0000000..3a10191
 +        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) DroiUpdates.removeInstalledDownload(context)
 +    }
 +}
+diff --git a/app/src/main/java/com/droiddeck/launcher/HomeApp.kt b/app/src/main/java/com/droiddeck/launcher/HomeApp.kt
+index e2096a6..7d659c4 100644
+--- a/app/src/main/java/com/droiddeck/launcher/HomeApp.kt
++++ b/app/src/main/java/com/droiddeck/launcher/HomeApp.kt
+@@ -263,13 +263,13 @@ object HomeApp {
+         SessionState.running && SessionState.mode == SessionService.MODE_STEAM
+ 
+     fun showFrontEnd(context: Context, intent: Intent = Intent(context, FrontEndActivity::class.java)) {
+-        val frontEnd = FrontEndActivity::class.java.name
++        val frontEnd = DesktopLauncherActivity::class.java.name
+         val tasks = runCatching { context.getSystemService(android.app.ActivityManager::class.java)?.appTasks }.getOrNull().orEmpty()
+         val own = tasks.firstOrNull { task ->
+-            runCatching { task.taskInfo.let { it.baseIntent.component?.className == frontEnd && it.topActivity?.className == frontEnd } }
++            runCatching { task.taskInfo.let { it.topActivity?.className == frontEnd } }
+                 .getOrDefault(false)
+         }
+-        val launch = Intent(intent).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
++        val launch = Intent(intent).setClass(context, DesktopLauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+         if (own != null && runCatching { own.startActivity(context, launch, null) }.isSuccess) return
+         // The session task shares the front end's affinity, so without MULTIPLE_TASK the front end lands inside the session's PiP window.
+         context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK))
 diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
 index 9904584..d877c44 100644
 --- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
