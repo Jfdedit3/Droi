@@ -135,7 +135,7 @@ new file mode 100644
 index 0000000..cf7bda8
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,188 @@
 +package com.droiddeck.launcher
 +
 +import androidx.activity.ComponentActivity
@@ -195,10 +195,14 @@ index 0000000..cf7bda8
 +                                    if (automatic) DroiUpdates.check(this@DesktopLauncherActivity, force = true, report = ::showUpdateStatus)
 +                                }
 +                                val message by DroiUpdates.status.collectAsState()
-+                                val available by DroiUpdates.ready.collectAsState()
++                                val ready by DroiUpdates.ready.collectAsState()
++                                val available by DroiUpdates.available.collectAsState()
 +                                if (message.isNotEmpty()) Text(message)
-+                                if (available > 0) MenuItem("Installer la mise à jour", false) {
++                                if (ready > 0) MenuItem("Installer la mise à jour", false) {
 +                                    DroiUpdates.install(this@DesktopLauncherActivity)
++                                }
++                                if (available > 0 && ready == 0) MenuItem("Télécharger la version $available", false) {
++                                    DroiUpdates.check(this@DesktopLauncherActivity, force = true, manual = true, report = ::showUpdateStatus)
 +                                }
 +                                MenuItem("Vérifier maintenant", false) {
 +                                    DroiUpdates.check(this@DesktopLauncherActivity, force = true, manual = true, report = ::showUpdateStatus)
@@ -325,7 +329,7 @@ new file mode 100644
 index 0000000..3a10191
 --- /dev/null
 +++ b/app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,213 @@
 +package com.droiddeck.launcher
 +
 +import android.app.DownloadManager
@@ -358,6 +362,7 @@ index 0000000..3a10191
 +    private val tagPattern = Regex("droi-(\\d+)")
 +    val status = MutableStateFlow("")
 +    val ready = MutableStateFlow(0)
++    val available = MutableStateFlow(0)
 +    private fun directory(context: Context) = File(context.cacheDir, "droi-updates")
 +    private fun apk(context: Context, version: Int) = File(directory(context), "$version.apk")
 +    private val busy = AtomicBoolean()
@@ -373,7 +378,6 @@ index 0000000..3a10191
 +    fun check(context: Context, force: Boolean = false, manual: Boolean = false, report: (String) -> Unit = {}) {
 +        val app = context.applicationContext
 +        removeInstalledDownload(app)
-+        if (!manual && !isEnabled(app)) return
 +        val saved = prefs(app)
 +        val now = System.currentTimeMillis()
 +        if (!force && now - saved.getLong("last_check", 0) in 0 until CHECK_INTERVAL) return
@@ -386,9 +390,12 @@ index 0000000..3a10191
 +        Thread({
 +            try {
 +                val release = latestRelease()
++                available.value = release?.version?.takeIf { it > BuildConfig.VERSION_CODE } ?: 0
 +                val result = when {
-+                    release == null || release.version <= BuildConfig.VERSION_CODE -> "Droi est à jour."
-+                    !manual && !isEnabled(app) -> "Téléchargement automatique désactivé."
++                    release == null -> "Aucune version Droi disponible sur GitHub."
++                    release.version <= BuildConfig.VERSION_CODE -> "Droi est à jour."
++                    !manual && !isEnabled(app) ->
++                        "Nouvelle version Droi ${release.version} disponible. Téléchargement automatique désactivé."
 +                    else -> download(app, release)
 +                }
 +                saved.edit().putLong("last_check", now).apply()
@@ -396,7 +403,7 @@ index 0000000..3a10191
 +                report(result)
 +            } catch (error: Exception) {
 +                Log.w("DroiUpdates", "Update check failed", error)
-+                status.value = "Échec de la mise à jour. Tu peux réessayer."
++                status.value = "Vérification impossible : ${error.message ?: error.javaClass.simpleName}"
 +                report(status.value)
 +            } finally {
 +                busy.set(false)
@@ -433,6 +440,8 @@ index 0000000..3a10191
 +            connection.connectTimeout = 12_000
 +            connection.readTimeout = 12_000
 +            connection.setRequestProperty("Accept", "application/vnd.github+json")
++            connection.setRequestProperty("User-Agent", "Droi-Desktop-Updater")
++            connection.setRequestProperty("Cache-Control", "no-cache")
 +            val status = connection.responseCode
 +            if (status == 404) return null
 +            check(status == 200) { "GitHub HTTP $status" }

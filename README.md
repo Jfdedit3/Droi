@@ -16,7 +16,7 @@ Droi nécessite un appareil **ARM64** sous **Android 8.0 ou ultérieur**. Le sup
 
 ## Mises à jour
 
-Dans Droi, ouvre **Paramètres → Télécharger automatiquement les nouveaux APK**. Cette option est désactivée par défaut. Quand elle est activée, Droi vérifie à l’ouverture si une nouvelle version est disponible, puis télécharge l’APK. **Vérifier maintenant** permet de lancer la vérification manuellement. Android te demandera de confirmer l’installation.
+Dans Droi, ouvre **Paramètres → Télécharger automatiquement les nouveaux APK**. Cette option est désactivée par défaut. Droi vérifie la disponibilité d’une nouvelle version à l’ouverture, même si le téléchargement automatique est désactivé. Quand l’option est activée, il télécharge l’APK. Sinon, l’onglet Paramètres affiche la nouvelle version et propose son téléchargement manuel. **Vérifier maintenant** lance une vérification et télécharge la nouvelle version si elle existe. Android te demandera de confirmer l’installation.
 
 ## Compilation et sources
 
