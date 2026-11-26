@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  checks:
+    name: Validate Droi patches and ARM64 static filesystem probe
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check guest scripts and run static ARM64 probe
+        run: |
+          set -euo pipefail
+          bash -n linux/droi-apps linux/droi-doctor
+          sh -n linux/opencode
+          cc -O2 -static -Wall -Wextra -Werror tests/static-fs-probe.c -o /tmp/droi-static-probe
+          DROI_PROBE=/tmp/droi-static-probe bash linux/droi-doctor
+      - uses: actions/checkout@v4
+        with:
+          repository: Droid-Deck/DroidDeck
+          ref: d38fd373f0caf6574458abc574640f2d961d09d9
+          path: upstream
+          sparse-checkout: |
+            /*
+            !/docs/releases/media/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Check patches before the APK build
+        run: |
+          git -C upstream apply --check ../patches/android.patch ../patches/linux.patch
+
   xbox:
     name: Prepare shared ARM64 runtime dependencies
     runs-on: ubuntu-24.04-arm
@@ -239,7 +268,7 @@ jobs:
 
   build:
     name: Compile and verify ARM64 APK
-    needs: [components, xbox]
+    needs: [checks, components, xbox]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -448,8 +477,16 @@ jobs:
 
       - name: Apply the desktop launcher
         run: |
-          git apply --check .droi/ubuntu.patch
-          git apply .droi/ubuntu.patch
+          git apply --check .droi/patches/android.patch .droi/patches/linux.patch
+          git apply .droi/patches/android.patch .droi/patches/linux.patch
+          install -Dm644 .droi/android/DroiUpdates.kt app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
+          install -Dm644 .droi/android/DesktopLauncherActivity.kt app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
+          for script in droi-apps droi-doctor opencode; do
+            install -Dm755 ".droi/linux/$script" "tools/linuxfs/overlay/usr/bin/$script"
+          done
+          bash tools/ci/install-ubuntu-packages.sh gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          mkdir -p app/src/main/assets/linuxfs/usr/local/bin
+          aarch64-linux-gnu-gcc -O2 -static -Wall -Wextra -Werror .droi/tests/static-fs-probe.c -o app/src/main/assets/linuxfs/usr/local/bin/droi-static-probe
           # Fail CI if the desktop silently falls back to native LD_PRELOAD
           # translation, which cannot translate paths in static ARM64 Codex.
           grep -Fq 'SessionState.mode != MODE_DESKTOP &&' app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
@@ -478,7 +515,9 @@ jobs:
       - name: Verify APK signature
         run: |
           signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
-          "$signer" verify --verbose dist/Droi-Desktop-arm64.apk
+          "$signer" verify --verbose --print-certs dist/Droi-Desktop-arm64.apk
+          unzip -tq dist/Droi-Desktop-arm64.apk
+          unzip -l dist/Droi-Desktop-arm64.apk | grep -F "assets/linuxfs/usr/local/bin/droi-static-probe"
 
       - uses: actions/upload-artifact@v4
         with:

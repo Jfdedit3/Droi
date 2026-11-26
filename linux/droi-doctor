@@ -1,0 +1,31 @@
+#!/bin/bash
+set -uo pipefail
+dir="$(mktemp -d "$HOME/.droi-doctor.XXXXXXXX")" || exit 1
+trap 'rm -rf -- "$dir"' EXIT
+echo "Architecture : $(uname -m)"
+echo "Mode natif : ${DDNATV_ROOT:+actif}"
+rc=0
+"${DROI_PROBE:-/usr/local/bin/droi-static-probe}" "$dir" || rc=1
+python3 - "$dir" <<'PY' || rc=1
+import sqlite3, sys
+from pathlib import Path
+with sqlite3.connect(Path(sys.argv[1]) / "probe.sqlite") as db:
+    db.execute("CREATE TABLE test(value TEXT)")
+    db.execute("INSERT INTO test VALUES ('ok')")
+    assert db.execute("SELECT value FROM test").fetchone() == ("ok",)
+print("PASS: SQLite")
+PY
+if [ -x /usr/lib/chatgpt/resources/codex ]; then
+    result="$(CODEX_HOME="$dir" CODEX_SQLITE_HOME="$dir" /usr/lib/chatgpt/resources/codex login status 2>&1)"
+    code=$?
+    echo "$result"
+    if [ "$code" = 0 ] || printf '%s\n' "$result" | grep -Eiq 'not logged in|not authenticated'; then
+        echo "PASS: configuration Codex accessible (répertoire de test isolé)"
+    else
+        echo "FAIL: Codex (code $code)" >&2
+        rc=1
+    fi
+else
+    echo "SKIP: ChatGPT Desktop absent"
+fi
+exit "$rc"

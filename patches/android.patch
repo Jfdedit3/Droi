@@ -1,0 +1,403 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index f2cb401..231a14f 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -129,11 +129,11 @@ android {
+         .asText.get().readLines().find { it.startsWith('CI_ANDROID_NDK_VERSION=') }.split('=', 2)[1].trim()
+ 
+     defaultConfig {
+-        applicationId "com.droiddeck.launcher"
++        applicationId "com.jfdedit3.droi"
+         minSdkVersion 26
+         targetSdkVersion 34
+-        versionCode 19
+-        versionName "0.7.1"
++        versionCode = (System.getenv("DROI_VERSION_CODE") ?: "19").toInteger()
++        versionName = System.getenv("DROI_VERSION_NAME") ?: "0.7.1"
+         buildConfigField "String", "BUILD_LABEL", "\"${escapedBuildLabel}\""
+         buildConfigField "String", "SOURCE_COMMIT", "\"${sourceCommit}\""
+         buildConfigField "int", "PR_NUMBER", "${prNumber}"
+@@ -203,6 +203,7 @@ android {
+     }
+ 
+     androidResources {
++        noCompress += "zst"
+         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:<dir>droiddeck-xbox:<dir>droiddeck-comet:<dir>droiddeck-ubisoft:<dir>droiddeck-rockstar:<dir>droiddeck-dirt:<dir>droiddeck-epic:<dir>directaudio:<dir>hybris'
+     }
+ 
+@@ -394,6 +395,7 @@ dependencies {
+     debugImplementation 'androidx.compose.ui:ui-test-manifest'
+     implementation 'androidx.activity:activity-compose:1.8.2'
+     implementation 'androidx.compose.material:material-icons-extended'
++    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+     implementation 'io.coil-kt:coil-compose:2.6.0'
+     implementation 'io.noties.markwon:core:4.6.2'
+     implementation 'io.noties.markwon:ext-strikethrough:4.6.2'
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 55b75d3..760f03d 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -74,14 +74,13 @@
+         android:allowBackup="false"
+         android:allowAudioPlaybackCapture="true"
+         android:icon="@mipmap/ic_launcher"
+-        android:label="@string/app_name"
++        android:label="Droi Desktop"
+         android:theme="@style/AppTheme"
+         android:hardwareAccelerated="true"
+         android:largeHeap="true"
+         android:extractNativeLibs="true"
+         android:requestLegacyExternalStorage="true"
+-        android:appCategory="game"
+-        android:isGame="true">
++        android:appCategory="productivity">
+ 
+         <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
+         <service android:name=".glasses.LumaRgbCaptureService" android:exported="false"
+@@ -141,34 +140,19 @@
+             android:theme="@style/AppTheme" />
+ 
+         <activity
++            android:name=".DesktopLauncherActivity"
++            android:exported="false"
++            android:label="Droi Desktop" />
++
++        <!-- Existing notification and shortcut intents also open the desktop launcher. -->
++        <activity-alias
+             android:name=".FrontEndActivity"
+-            android:exported="true"
+-            android:screenOrientation="user"
+-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation">
+-            <layout android:defaultWidth="1024dp" android:defaultHeight="640dp" />
+-            <intent-filter>
+-                <action android:name="android.intent.action.VIEW" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-                <category android:name="android.intent.category.BROWSABLE" />
+-                <category android:name="android.intent.category.CAR_LAUNCHER" />
+-                <data android:scheme="droiddeck" android:host="game" />
+-                <data android:scheme="droiddeck" android:host="soundtrack" />
+-                <data android:scheme="droiddeck" android:host="settings" />
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-            </intent-filter>
+-            <intent-filter>
+-                <action android:name="com.droiddeck.launcher.LAUNCH_GAME" />
+-                <category android:name="android.intent.category.DEFAULT" />
+-                <category android:name="android.intent.category.CAR_LAUNCHER" />
+-            </intent-filter>
+-        </activity>
++            android:targetActivity=".DesktopLauncherActivity"
++            android:exported="false" />
+ 
+         <activity-alias
+             android:name=".MainActivity"
+-            android:targetActivity=".FrontEndActivity"
++            android:targetActivity=".DesktopLauncherActivity"
+             android:icon="@mipmap/ic_launcher"
+             android:exported="true">
+             <intent-filter>
+@@ -180,7 +164,7 @@
+ 
+         <activity-alias
+             android:name=".LauncherLight"
+-            android:targetActivity=".FrontEndActivity"
++            android:targetActivity=".DesktopLauncherActivity"
+             android:icon="@mipmap/ic_launcher_light"
+             android:enabled="false"
+             android:exported="true">
+@@ -414,5 +398,10 @@
+                 android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
+                 tools:node="remove" />
+         </service>
++        <receiver android:name=".DroiUpdateInstalledReceiver" android:exported="false">
++            <intent-filter>
++                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
++            </intent-filter>
++        </receiver>
+     </application>
+ </manifest>
+diff --git a/app/src/main/java/com/droiddeck/launcher/App.kt b/app/src/main/java/com/droiddeck/launcher/App.kt
+index 58e7e12..3640fc9 100644
+--- a/app/src/main/java/com/droiddeck/launcher/App.kt
++++ b/app/src/main/java/com/droiddeck/launcher/App.kt
+@@ -57,7 +57,6 @@ class App : Application() {
+         com.droiddeck.launcher.session.SessionPrefs.settleGpuDriverMode(this)
+         com.droiddeck.launcher.session.SessionPrefs.settleStoresTabOrder(this, com.droiddeck.launcher.stores.Store.entries.map { it.id })
+         com.droiddeck.launcher.update.AppUpdates.init(this)
+-        com.droiddeck.launcher.update.UpdateWatch.sync(this, com.droiddeck.launcher.update.AppUpdates.follow(this, null))
+         com.droiddeck.launcher.core.DownloadSource.init(this)
+         prefetchAddonPacks()
+         GpuClockPin.clearLeftover(this)
+diff --git a/app/src/main/java/com/droiddeck/launcher/HomeApp.kt b/app/src/main/java/com/droiddeck/launcher/HomeApp.kt
+index e2096a6..7d659c4 100644
+--- a/app/src/main/java/com/droiddeck/launcher/HomeApp.kt
++++ b/app/src/main/java/com/droiddeck/launcher/HomeApp.kt
+@@ -263,13 +263,13 @@ object HomeApp {
+         SessionState.running && SessionState.mode == SessionService.MODE_STEAM
+ 
+     fun showFrontEnd(context: Context, intent: Intent = Intent(context, FrontEndActivity::class.java)) {
+-        val frontEnd = FrontEndActivity::class.java.name
++        val frontEnd = DesktopLauncherActivity::class.java.name
+         val tasks = runCatching { context.getSystemService(android.app.ActivityManager::class.java)?.appTasks }.getOrNull().orEmpty()
+         val own = tasks.firstOrNull { task ->
+-            runCatching { task.taskInfo.let { it.baseIntent.component?.className == frontEnd && it.topActivity?.className == frontEnd } }
++            runCatching { task.taskInfo.let { it.topActivity?.className == frontEnd } }
+                 .getOrDefault(false)
+         }
+-        val launch = Intent(intent).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
++        val launch = Intent(intent).setClass(context, DesktopLauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+         if (own != null && runCatching { own.startActivity(context, launch, null) }.isSuccess) return
+         // The session task shares the front end's affinity, so without MULTIPLE_TASK the front end lands inside the session's PiP window.
+         context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK))
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt b/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt
+index 146509b..c593536 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/ComponentsManager.kt
+@@ -1439,6 +1439,30 @@ object ComponentsManager {
+         refresh: () -> List<CatalogItem>,
+     ): CatalogItem? = catalogMatch(cached(), file, release) ?: catalogMatch(refresh(), file, release)
+ 
++    internal fun downloadForProton(context: Context, dir: String, progress: (String, Int) -> Unit) {
++        val proton = protons(context).first { it.dir.name == dir }
++        progress("Recherche des composants pour ${proton.name}", -1)
++        val entries = catalog(context, false).items.ifEmpty { catalog(context, true).items }
++        check(entries.isNotEmpty()) { "Catalogue des composants indisponible" }
++        for (comp in COMPONENTS) {
++            if (!supports(proton, comp) || runtimeManaged(context, comp)) continue
++            val item = if (comp == "dxvk" && hardwareDxvk(context)) {
++                val pinned = pinnedAutoDxvk(context) ?: continue
++                entries.firstOrNull { it.comp == comp && it.file == pinned }
++            } else {
++                val line = if (comp == "fex") ComponentUpdates.fexLine(proton) else {
++                    val ec = arm64ec(context, proton, comp) ?: continue
++                    ComponentUpdates.line(comp, ec)
++                }
++                ComponentUpdates.pick(entries, line, emptySet())
++            } ?: continue
++            if (!isStored(context, item.file)) {
++                download(context, item) { percent -> progress("${proton.name} · ${item.file}", percent) }
++            }
++        }
++    }
++
++    @Synchronized
+     fun download(context: Context, item: CatalogItem, progress: (Int) -> Unit): Package {
+         require(allowedDownload(item.url)) { context.getString(R.string.cmgr_nightlies_only) }
+         require(Hashes.isGithubSha256(item.digest)) { context.getString(R.string.cmgr_list_predates_checksums) }
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt b/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt
+index 2eed240..2c75580 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/ProtonExtras.kt
+@@ -379,6 +379,9 @@ object ProtonExtras {
+                         Log.w(TAG, "sync pack for ${tool.name}", t)
+                     }
+                 }
++                val dir = placed ?: return "Proton installé, mais son dossier est introuvable."
++                runCatching { ComponentsManager.downloadForProton(context, dir, onProgress) }
++                    .exceptionOrNull()?.let { return "Proton installé. Téléchargement des composants interrompu : ${it.message}" }
+                 null
+             }
+         } catch (e: Exception) {
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
+index 4764e27..e8c1adc 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/SessionFiles.kt
+@@ -105,6 +105,10 @@ object SessionFiles {
+         GameEnvironmentStore.publish(context)
+         WinComponents.publish(context)
+         val files = arrayOf(
++            "usr/bin/opencode" to "usr/bin/opencode",
++            "usr/bin/droi-apps" to "usr/bin/droi-apps",
++            "usr/bin/droi-doctor" to "usr/bin/droi-doctor",
++            "usr/local/bin/droi-static-probe" to "usr/local/bin/droi-static-probe",
+             "usr/local/bin/droiddeck-game-env" to "usr/local/bin/droiddeck-game-env",
+             "usr/local/bin/droiddeck-game-debug" to "usr/local/bin/droiddeck-game-debug",
+             "usr/local/bin/droiddeck-game-gpu" to "usr/local/bin/droiddeck-game-gpu",
+diff --git a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+index 9904584..d877c44 100644
+--- a/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
++++ b/app/src/main/java/com/droiddeck/launcher/session/SessionService.kt
+@@ -740,7 +740,10 @@ class SessionService : Service() {
+         val binds = sessionBinds(controllersOn, fakeInputDir, sessionDir, guest, sessionRoot, runtimeDir)
+-        val nativeUserland = com.droiddeck.launcher.runtime.NativeGuest.enabled(this)
++        // The native LD_PRELOAD path translator cannot work for statically linked Codex.
++        // Run the Ubuntu desktop, its terminals, and helpers under PRoot instead.
++        val nativeUserland = SessionState.mode != MODE_DESKTOP &&
++            com.droiddeck.launcher.runtime.NativeGuest.enabled(this)
+         synchronized(stopLock) {
+             if (gen == sessionGen && SessionState.running) com.droiddeck.launcher.runtime.NativeGuest.sessionMode = nativeUserland
+         }
+-        val fastPathKey = if (ProotFastPath.enabled(this)) {
++        val fastPathKey = if (!nativeUserland && ProotFastPath.enabled(this)) {
+             val prootBinds = LinuxRuntime.binds(
+@@ -811,6 +814,20 @@ class SessionService : Service() {
+         if (SessionState.mode == MODE_DESKTOP) {
+             runCatching { com.droiddeck.launcher.runtime.DesktopLanguage.ensure(this, com.droiddeck.launcher.core.AppLanguage.effective(this)) }
+                 .onFailure { Log.w(TAG, "desktop language pack: $it") }
++            // Xclipse's nested GBM/EGL path can return only black GL buffers.
++            // Use the desktop pack's existing QPainter path on Samsung Exynos.
++            val exynos = android.os.Build.HARDWARE.startsWith("s5e", ignoreCase = true) ||
++                (android.os.Build.VERSION.SDK_INT >= 31 &&
++                    android.os.Build.SOC_MANUFACTURER.equals("Samsung", ignoreCase = true))
++            if (exynos) {
++                val compositorMode = java.io.File(root, "usr/share/droiddeck/kwin-compositor")
++                runCatching {
++                    if (compositorMode.parentFile?.isDirectory == true) {
++                        compositorMode.writeText("qpainter\n")
++                        Log.i(TAG, "Droi: KDE QPainter compatibility mode enabled for Exynos")
++                    }
++                }.onFailure { Log.w(TAG, "Droi: cannot configure KDE QPainter", it) }
++            }
+         }
+ 
+         val networkLink = LinuxNetworkLinkComponent(this, root)
+diff --git a/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt b/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
+index b2bc10c..4ea7e51 100644
+--- a/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
++++ b/app/src/main/java/com/droiddeck/launcher/ui/SessionDrawerPage.kt
+@@ -14,6 +14,7 @@ internal enum class SessionDrawerPage(val firstControl: String) {
+     EFFECTS("look"),
+     GAMES("anisotropy"),
+     AGENT("agent-input"),
++    WINE("wine-list"),
+     SESSION("suspend"),
+     MORE("more-edit"),
+     VR("steamvr"),
+diff --git a/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt b/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt
+index d4b22a2..9650d8d 100644
+--- a/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt
++++ b/app/src/main/java/com/droiddeck/launcher/ui/SessionOverlay.kt
+@@ -171,6 +171,7 @@ import com.droiddeck.launcher.input.TouchGestureConfig.Companion.MOUSE_BEHAVIOR_
+ import com.droiddeck.launcher.input.TouchGestureConfig.Companion.MOUSE_BEHAVIOR_HOLD
+ import com.droiddeck.launcher.input.TouchGestureConfig.Companion.MOUSE_BEHAVIOR_NONE
+ import kotlinx.coroutines.flow.collect
++import androidx.compose.material.icons.outlined.List
+ import java.util.Locale
+ 
+ internal val SessionDrawerPage.title: Int get() = when (this) {
+@@ -183,6 +184,7 @@ internal val SessionDrawerPage.title: Int get() = when (this) {
+     SessionDrawerPage.GAMES -> R.string.game_settings_title
+     SessionDrawerPage.AGENT -> R.string.rail_agent
+     SessionDrawerPage.SESSION -> R.string.mode_session
++    SessionDrawerPage.WINE -> R.string.drawer_wine_processes
+     SessionDrawerPage.MORE -> R.string.drawer_page_more
+ }
+ 
+@@ -196,6 +198,7 @@ internal val SessionDrawerPage.icon get() = when (this) {
+     SessionDrawerPage.GAMES -> Icons.Outlined.Layers
+     SessionDrawerPage.AGENT -> Icons.Outlined.Terminal
+     SessionDrawerPage.SESSION -> Icons.Outlined.Settings
++    SessionDrawerPage.WINE -> Icons.Outlined.List
+     SessionDrawerPage.MORE -> Icons.Outlined.MoreHoriz
+ }
+ 
+@@ -914,6 +917,7 @@ internal fun SessionDrawer(open: Boolean, requestedPage: SessionDrawerPage, cont
+                                 track = { key -> focus.track(page, key) },
+                             )
+                         }
++                        SessionDrawerPage.WINE -> if (open) WineProcessPage(focus.track(page, "wine-list")) else Unit
+                         SessionDrawerPage.AGENT -> Unit
+                         SessionDrawerPage.MORE -> DrawerMorePage(host, pages.inMore(), { host.open = null; onPageChange(it) }, { host.open = null; managing = true }) { key -> focus.track(page, key) }
+                         SessionDrawerPage.SESSION -> {
+diff --git a/app/src/main/java/com/droiddeck/launcher/ui/WineProcessPage.kt b/app/src/main/java/com/droiddeck/launcher/ui/WineProcessPage.kt
+new file mode 100644
+index 0000000..99e82a2
+--- /dev/null
++++ b/app/src/main/java/com/droiddeck/launcher/ui/WineProcessPage.kt
+@@ -0,0 +1,62 @@
++package com.droiddeck.launcher.ui
++
++import android.os.Process
++import android.system.Os
++import androidx.compose.foundation.focusable
++import androidx.compose.foundation.layout.Column
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.produceState
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.res.stringResource
++import com.droiddeck.launcher.R
++import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.withContext
++import java.io.File
++
++private fun processList(): List<Pair<Int, String>> {
++    val uid = Process.myUid()
++    val processes = mutableListOf<Pair<Int, String>>()
++    for (dir in File("/proc").listFiles().orEmpty()) {
++        val pid = dir.name.toIntOrNull() ?: continue
++        val name = runCatching {
++            if (Os.stat(dir.path).st_uid != uid) return@runCatching null
++            val args = File(dir, "cmdline").readText().split('\u0000')
++            val program = args.first().substringAfterLast('/').substringAfterLast('\\')
++            val comm = File(dir, "comm").readText().trim()
++            when {
++                program.endsWith(".exe", true) -> program
++                program in wineLoaders -> args.drop(1).firstOrNull { it.endsWith(".exe", true) }
++                    ?.substringAfterLast('/')?.substringAfterLast('\\') ?: program
++                comm.endsWith(".exe", true) || comm in wineLoaders -> comm
++                else -> null
++            }
++        }.getOrNull()
++        if (name != null) processes.add(pid to name)
++    }
++    return processes.sortedBy { it.first }
++}
++
++private val wineLoaders = setOf("wine", "wine64", "wineserver", "wineserver64", "wine-preloader", "wine64-preloader")
++
++@Composable
++internal fun WineProcessPage(modifier: Modifier) {
++    val processes by produceState<List<Pair<Int, String>>?>(null) {
++        while (true) {
++            value = withContext(Dispatchers.IO) { processList() }
++            delay(1000)
++        }
++    }
++    SettingsGroup(stringResource(R.string.drawer_wine_processes)) {
++        Column(modifier.focusable()) {
++            val rows = processes
++            when {
++                rows == null -> Text("…")
++                rows.isEmpty() -> Text(stringResource(R.string.drawer_wine_empty))
++                else -> rows.forEach { (pid, name) -> SettingsRow(name, "PID $pid") {} }
++            }
++        }
++    }
++}
+diff --git a/app/src/main/res/values-fr/strings.xml b/app/src/main/res/values-fr/strings.xml
+index c735507..3c3a9ff 100644
+--- a/app/src/main/res/values-fr/strings.xml
++++ b/app/src/main/res/values-fr/strings.xml
+@@ -4119,4 +4119,6 @@
+     <string name="theme_custom_error">Erreur</string>
+     <string name="hud_only_during_game">Afficher le HUD uniquement pendant une partie</string>
+     <string name="hud_only_during_game_hint">Masquer le HUD lorsqu’aucune image du jeu n’est détectée.</string>
++    <string name="drawer_wine_processes">Processus Wine</string>
++    <string name="drawer_wine_empty">Aucun processus Wine en cours</string>
+ </resources>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 36a782b..e8d65aa 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -4388,4 +4388,6 @@
+     <string name="hud_only_during_game_hint">Hide the HUD when no game frames are detected.</string>
+     <string name="onboarding_button_getting_ready">Getting ready · %1$d%%</string>
+     <string name="onboarding_button_finish">Finish setup · %1$d%%</string>
++    <string name="drawer_wine_processes">Wine processes</string>
++    <string name="drawer_wine_empty">No Wine processes running</string>
+ </resources>
+diff --git a/app/src/main/res/xml/log_share_paths.xml b/app/src/main/res/xml/log_share_paths.xml
+index 9bed7b6..4d49322 100644
+--- a/app/src/main/res/xml/log_share_paths.xml
++++ b/app/src/main/res/xml/log_share_paths.xml
+@@ -1,4 +1,5 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <paths>
+     <cache-path name="shared_logs" path="share/" />
++    <cache-path name="droi_updates" path="droi-updates/" />
+ </paths>
