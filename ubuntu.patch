@@ -721,10 +721,10 @@ index 9bed7b6..4d49322 100644
 +    <cache-path name="droi_updates" path="droi-updates/" />
  </paths>
 diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/droiddeck-desktop
-index ee1e3a3..cab1289 100644
+index ee1e3a3..71c97b4 100644
 --- a/tools/linuxfs/desktop/droiddeck-desktop
 +++ b/tools/linuxfs/desktop/droiddeck-desktop
-@@ -180,6 +180,37 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
+@@ -180,6 +180,56 @@ if [ -x /usr/lib/snapd/snap-confine ] && [ ! -d /var/lib/pacman ]; then
    export XDG_DATA_DIRS=/var/lib/snapd/desktop:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
    export PATH=$PATH:/snap/bin
  fi
@@ -759,6 +759,25 @@ index ee1e3a3..cab1289 100644
 +    "${root_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 remove -y firefox
 +  fi
 +) >>"$HOME/.droi-browser-setup.log" 2>&1 &
++(
++  set -e
++  mkdir -p "$HOME/.cache/droi"
++  exec 8>"$HOME/.cache/droi/opencode-setup.lock"
++  flock -n 8 || exit 0
++  prefix=/usr/local
++  [ -x "$prefix/bin/opencode" ] && "$prefix/bin/opencode" --version >/dev/null 2>&1 && exit 0
++  root_cmd=()
++  if [ "$(id -u)" != 0 ]; then root_cmd=(/usr/local/bin/droiddeck-root); fi
++  "${root_cmd[@]}" bash -eu -c '
++    export TMPDIR=/tmp DEBIAN_FRONTEND=noninteractive
++    if ! command -v npm >/dev/null || ! command -v node >/dev/null; then
++      apt-get -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120 update
++      apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends nodejs npm
++    fi
++    npm install --global --prefix /usr/local --include=optional --no-audit --no-fund opencode-ai
++    /usr/local/bin/opencode --version
++  '
++) >>"$HOME/.droi-opencode-setup.log" 2>&1 &
  update-mime-database /usr/share/mime >/dev/null 2>&1 &
  [ -f /usr/share/icons/hicolor/icon-theme.cache ] || gtk-update-icon-cache -q -t /usr/share/icons/hicolor 2>/dev/null &
  [ -f /usr/share/glib-2.0/schemas/gschemas.compiled ] || glib-compile-schemas /usr/share/glib-2.0/schemas 2>/dev/null
