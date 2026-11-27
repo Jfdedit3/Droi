@@ -8,17 +8,18 @@ Télécharger l'APK ARM64 depuis [GitHub Releases](https://github.com/Jfdedit3/D
 
 ## Applications Linux : à la demande
 
-Le bureau ne télécharge plus de logiciels au démarrage et ne désinstalle plus Firefox. Les logiciels déjà installés sont conservés. Dans Konsole :
+Le bureau ne télécharge pas de logiciels au démarrage. Brave remplace Firefox dans le menu Droi et s’installe au premier clic ; l’ancien paquet et son profil restent conservés pour éviter toute perte de données. Dans Konsole :
 
 ```bash
 droi-apps status
 droi-apps install chatgpt latest
 droi-apps install chatgpt VERSION SHA256 [FICHIER_DEB]
 droi-apps install opencode VERSION
+droi-apps install brave latest
 droi-apps install brave VERSION
 ```
 
-Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obtenu d'une source de confiance. Le fichier DEB local est facultatif : sinon Droi télécharge le paquet ChatGPT ARM64 depuis l'URL de distribution et refuse une version ou empreinte différente. Pour Brave, le dépôt APT signé doit déjà être configuré ; suivre [les instructions officielles](https://brave.com/linux/) puis choisir une version via `apt-cache policy brave-browser`. Pour OpenCode, choisir une version via `npm view opencode-ai versions --json`. Ne pas réutiliser un condensat calculé sur un téléchargement non vérifié comme preuve d'origine. 
+Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obtenu d'une source de confiance. Le fichier DEB local est facultatif : sinon Droi télécharge le paquet ChatGPT ARM64 depuis l'URL de distribution et refuse une version ou empreinte différente. Pour Brave, Droi configure le dépôt APT signé stable selon [les instructions officielles](https://brave.com/linux/), installe le paquet ARM64 et définit le lanceur Brave comme navigateur par défaut. Sous PRoot en root, le lancement sans sandbox exige une confirmation explicite. Pour OpenCode, choisir une version via `npm view opencode-ai versions --json`. Ne pas réutiliser un condensat calculé sur un téléchargement non vérifié comme preuve d'origine. 
 
 ## ChatGPT et diagnostics
 
