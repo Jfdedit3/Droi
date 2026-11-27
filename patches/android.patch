@@ -535,3 +535,15 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/runtime/DesktopRemoval.kt 
          if (FileUtils.readString(File(root, CLEANED))?.trim() == "1") return
          if (!File(root, CLEANING).exists() && !File(root, ".droiddeck-pkg-desktop").exists() && !File(root, "usr/bin/lxqt-session").exists()) return
          listener?.onProgress(context.getString(R.string.desktop_cleaning_legacy), -1)
+diff --git a/app/src/main/java/com/droiddeck/launcher/agent/AgentGuest.kt b/app/src/main/java/com/droiddeck/launcher/agent/AgentGuest.kt
+--- a/app/src/main/java/com/droiddeck/launcher/agent/AgentGuest.kt
++++ b/app/src/main/java/com/droiddeck/launcher/agent/AgentGuest.kt
+@@ -231,6 +231,8 @@
+             timeoutMs + 2_000, trusted = true)
+ 
+     fun setGamescopeConvar(context: Context, name: String, value: Int): Boolean {
++        // Droi desktop uses Openbox/Xwayland rather than Gamescope.
++        if (SessionState.mode == com.droiddeck.launcher.session.SessionService.MODE_DESKTOP) return false
+         val request = JSONObject()
+             .put("kind", "exec")
+             .put("argv", org.json.JSONArray(listOf("gamescopectl", name, value.toString())))

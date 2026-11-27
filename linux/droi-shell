@@ -44,8 +44,8 @@ def main():
         theme.set_property("gtk-theme-name","Adwaita")
     css=Gtk.CssProvider()
     css.load_from_data(("""
-      #taskbar {background: #edf3fa; border-top: 1px solid #d3dfed;}
-      #start-menu {background: #edf3fb; border: 1px solid #c1cfe0; border-radius: 9px;}
+      #taskbar {background: #f1f5fa; border-top: 1px solid #cad9eb;}
+      #start-menu {background: #f3f6fb; border: 1px solid #c1cfe0; border-radius: 12px;}
       #start-menu, #taskbar {font-family: "Segoe UI", "Noto Sans", sans-serif; font-size: %dpx; color:#20242b;}
       #start-menu button, #taskbar button {background-image:none; border:0; box-shadow:none; background-color:transparent; border-radius:5px; padding:4px; color:#20242b;}
       #start-menu button:hover, #taskbar button:hover {background-color:#dce6f3;}
@@ -123,7 +123,7 @@ def main():
         win=widget.get_window()
         if win is None: return
         w,h=widget.get_allocated_width(),widget.get_allocated_height()
-        radius=9
+        radius=12
         region=cairo.Region()
         for y in range(h):
             edge=min(y,h-1-y)
@@ -149,7 +149,9 @@ def main():
     columns=6 if m["menu_w"]>=480 else 4
     pinned.set_max_children_per_line(columns);pinned.set_min_children_per_line(columns)
     pinned.set_homogeneous(True);pinned.set_row_spacing(4);pinned.set_column_spacing(3)
-    content.pack_start(pinned,False,False,0)
+    pinned_scroll=Gtk.ScrolledWindow();pinned_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
+    pinned_scroll.set_max_content_height(max(110,m["menu_h"]//3));pinned_scroll.set_propagate_natural_height(True)
+    pinned_scroll.add(pinned);content.pack_start(pinned_scroll,False,False,0)
     recommendation=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=8)
     rec_label=Gtk.Label(label="Recommandations");rec_label.set_xalign(0)
     rec_label.get_style_context().add_class("heading")
@@ -231,6 +233,7 @@ def main():
     if shutil.which("droi-windows"): favourites.append(("Processus Wine","application-x-executable",lambda: open_cmd("droi-windows","--wine-manager")))
     if shutil.which("droi-update"): favourites.insert(4,("Droi Update","system-software-update",lambda: open_cmd("droi-update")))
     if shutil.which("droi-game-downloader"): favourites.append(("Game Downloader","folder-download",lambda: open_cmd("droi-game-downloader")))
+    if terminal: favourites.append(("OpenCode","utilities-terminal",lambda: open_cmd(terminal,"-e","/usr/bin/opencode")))
     def remember(name,ico,action):
         recent[:] = [(n,i,a) for n,i,a in recent if n!=name]
         recent.insert(0,(name,ico,action))
@@ -279,7 +282,7 @@ def main():
         active=all_mode or bool(search.get_text().strip())
         headline.set_text("Toutes les applications" if active else "Épinglé")
         all_button.set_label("‹ Retour" if active else "Toutes les applications  ›")
-        pinned.set_visible(not active);recommendation.set_visible(not active)
+        pinned_scroll.set_visible(not active);recommendation.set_visible(not active)
         scroll.set_visible(active)
         if active: rebuild_apps()
     def toggle_all(*_):
@@ -326,6 +329,8 @@ def main():
     def update_clock():
         clock.set_text(datetime.datetime.now().strftime("%H:%M\n%d/%m/%Y"));return True
     update_clock();GLib.timeout_add_seconds(30,update_clock)
+    right.pack_start(image("network-wireless-symbolic",16),False,False,0)
+    right.pack_start(image("audio-volume-high-symbolic",16),False,False,0)
     right.pack_start(button("Afficher le bureau","user-desktop",lambda: ws.toggle_showing_desktop(not ws.get_showing_desktop())),False,False,0)
     Wnck.set_client_type(Wnck.ClientType.PAGER)
     ws=Wnck.Screen.get_default()
@@ -346,6 +351,27 @@ def main():
             btn.connect("clicked",activate);tasks.pack_start(btn,False,False,0)
         tasks.show_all()
     ws.force_update()
+    # Keep Steam's transient/dialog windows in the work area and bring them
+    # forward once on creation (not on every focus change).
+    def steam_dialog(_screen,win):
+        def place():
+            try:
+                if not any(w.get_xid()==win.get_xid() for w in ws.get_windows()): return False
+                app=(win.get_class_group_name() or "").casefold()
+                parent=win.get_transient()
+                if parent: app+=" "+(parent.get_class_group_name() or "").casefold()
+                kind=win.get_window_type()
+                if "steam" not in app or (kind!=Wnck.WindowType.DIALOG and not parent): return False
+                x,y,w,h=win.get_geometry()
+                area_h=height-bar_h
+                if x<0 or y<0 or x+w>width or y+h>area_h:
+                    win.set_geometry(Wnck.WindowGravity.CURRENT,Wnck.WindowMoveResizeMask.X|Wnck.WindowMoveResizeMask.Y,max(0,(width-w)//2),max(0,(area_h-h)//2),w,h)
+                if not win.is_minimized():
+                    win.activate(GdkX11.x11_get_server_time(bar.get_window()))
+            except Exception as error: print("Droi Steam dialog:",error,flush=True)
+            return False
+        GLib.timeout_add(200,place)
+    ws.connect("window-opened",steam_dialog)
     for signal in ("window-opened","window-closed","active-window-changed"):
         ws.connect(signal,rebuild_tasks)
     rebuild_tasks()

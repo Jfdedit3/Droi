@@ -6,8 +6,8 @@ index ee1e3a3..0438bde 100644
  else
    kwriteconfig6 --file plasma-localerc --group Translations --key LANGUAGE --delete
  fi
-+# Create launchers only; no network downloads or package changes at session startup.
-+if [ -x /usr/bin/droi-apps ]; then /usr/bin/droi-apps shortcuts; fi
++# Create launchers before starting the shell; provisioning runs inside it.
++if [ -x /usr/bin/droi-apps ]; then env -u KDE_FULL_SESSION -u KDE_SESSION_VERSION XDG_CURRENT_DESKTOP=Droi DESKTOP_SESSION=droi DE=generic /usr/bin/droi-apps shortcuts; fi
  cat > /usr/share/applications/droiddeck-steam-x64.desktop <<'ENTRY'
  [Desktop Entry]
  Type=Application
@@ -15,7 +15,7 @@ index ee1e3a3..0438bde 100644
    ''|*/droiddeck-ime.desktop) kwriteconfig6 --file kwinrc --group Wayland --key InputMethod /usr/local/share/applications/droiddeck-ime.desktop ;;
  esac
  python3 /usr/local/bin/droiddeck-open --install 2>&1 | sed 's/^/[open] /'
-+if [ -x /usr/bin/droi-windows ]; then /usr/bin/droi-windows --install; fi
++if [ -x /usr/bin/droi-windows ]; then env -u KDE_FULL_SESSION -u KDE_SESSION_VERSION XDG_CURRENT_DESKTOP=Droi DESKTOP_SESSION=droi DE=generic /usr/bin/droi-windows --install; fi
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop

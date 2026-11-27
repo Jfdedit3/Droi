@@ -22,7 +22,7 @@ def version_number(tag):
     return int(match.group(1)) if match else 0
 
 def commands(root):
-    apt = root + ["apt-get", "-o", "DPkg::Lock::Timeout=180"]
+    apt = root + ["apt-get", "-o", "DPkg::Lock::Timeout=600"]
     return [
         ("Actualisation des dépôts APT", apt + ["-o", "APT::Update::Error-Mode=any", "-o", "Acquire::Retries=3", "update"]),
         ("Mise à jour des paquets Ubuntu et applications APT", apt + ["-y", "--with-new-pkgs", "--no-remove", "upgrade"]),
@@ -35,7 +35,7 @@ def installed_opencode():
     try:
         result = subprocess.run(["npm", "list", "--global", "--prefix", "/usr/local", "--depth=0", "--json"],
                                 capture_output=True, text=True, timeout=20)
-        return "opencode-ai" in json.loads(result.stdout).get("dependencies", {})
+        return Path("/usr/local/lib/droi-opencode/bin/opencode").is_file() or "@opencode/cli" in json.loads(result.stdout).get("dependencies", {}) or "opencode-ai" in json.loads(result.stdout).get("dependencies", {})
     except (OSError, ValueError, subprocess.TimeoutExpired):
         return False
 
@@ -73,8 +73,8 @@ def maintain(emit, stage, update_apps=True):
         env = dict(os.environ, DEBIAN_FRONTEND="noninteractive", TMPDIR="/tmp", PYTHONUNBUFFERED="1")
         steps = commands(root)
         if update_apps and installed_opencode():
-            steps.append(("Mise à jour OpenCode", root + ["npm", "install", "--global", "--prefix", "/usr/local",
-                          "--include=optional", "--no-audit", "--no-fund", "opencode-ai@latest"]))
+            steps.append(("Mise à jour OpenCode", root + ["npm", "install", "--global", "--prefix", "/usr/local/lib/droi-opencode",
+                          "--include=optional", "--no-audit", "--no-fund", "@opencode/cli@latest"]))
         with os.fdopen(os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as log:
             def output(line):
                 log.write(line)

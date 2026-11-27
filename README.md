@@ -6,9 +6,9 @@ Droi exécute Ubuntu KDE Plasma sur Android ARM64 sans root Android, à partir d
 
 Télécharger l'APK ARM64 depuis [GitHub Releases](https://github.com/Jfdedit3/Droi/releases). Android 8.0 ou ultérieur. Dans Paramètres, Droi indique la version installée et les mises à jour disponibles. Le téléchargement automatique est facultatif ; avant installation, Droi contrôle la taille, le SHA-256, le nom de paquet, le code de version et le certificat de signature. Android confirme l'installation. Ne pas désinstaller l'ancienne application : les données Ubuntu sont conservées par une mise à jour compatible.
 
-## Applications Linux : à la demande
+## Applications Linux : installées par défaut
 
-Le bureau ne télécharge pas de logiciels au démarrage. Brave remplace Firefox dans le menu Droi et s’installe au premier clic ; l’ancien paquet et son profil restent conservés pour éviter toute perte de données. Dans Konsole :
+Au premier démarrage, Droi installe automatiquement Brave, ChatGPT, OpenCode 2 et le moteur DepotDownloader dans un terminal de progression. Les installations déjà réussies ne sont pas refaites. Firefox et les profils existants sont conservés. Dans Konsole :
 
 ```bash
 droi-apps status
@@ -19,7 +19,7 @@ droi-apps install brave latest
 droi-apps install brave VERSION
 ```
 
-Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obtenu d'une source de confiance. Le fichier DEB local est facultatif : sinon Droi télécharge le paquet ChatGPT ARM64 depuis l'URL de distribution et refuse une version ou empreinte différente. Pour Brave, Droi configure le dépôt APT signé stable selon [les instructions officielles](https://brave.com/linux/), installe le paquet ARM64 et définit le lanceur Brave comme navigateur par défaut. Sous PRoot en root, le lancement sans sandbox exige une confirmation explicite. Pour OpenCode, choisir une version via `npm view opencode-ai versions --json`. Ne pas réutiliser un condensat calculé sur un téléchargement non vérifié comme preuve d'origine. 
+Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obtenu d'une source de confiance. Le fichier DEB local est facultatif : sinon Droi télécharge le paquet ChatGPT ARM64 depuis l'URL de distribution et refuse une version ou empreinte différente. Pour Brave, Droi configure le dépôt APT signé stable selon [les instructions officielles](https://brave.com/linux/), installe le paquet ARM64 et définit le lanceur Brave comme navigateur par défaut. Sous PRoot en root, le lancement sans sandbox exige une confirmation explicite. Pour OpenCode, choisir une version via `npm view @opencode/cli versions --json`. Ne pas réutiliser un condensat calculé sur un téléchargement non vérifié comme preuve d'origine. 
 
 ## ChatGPT et diagnostics
 
@@ -105,3 +105,5 @@ Le menu Démarrer propose un lanceur GTK pour SteamRE DepotDownloader 3.4.0 ARM6
 ## Déploiement des programmes lors des mises à jour APK
 
 Les scripts Droi sont embarqués dans les assets Linux de l’APK et installés à chaque changement d’identité APK par SessionFiles. La CI vérifie que chaque script de la boucle de packaging est enregistré pour la copie dans les rootfs existants et que le contenu de l’APK correspond à la source. Fermer puis rouvrir la session Ubuntu après la mise à jour ; aucune réinstallation ni suppression des données n’est nécessaire.
+
+Les fenêtres secondaires Steam sont ramenées dans la zone visible au moment de leur création. Ce traitement ne modifie pas les jeux ni les fichiers de Steam. L'interface Steam et Proton restent à tester sur Android.

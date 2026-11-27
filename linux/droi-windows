@@ -67,7 +67,7 @@ def install():
     if not shutil.which("xdg-mime"):
         raise RuntimeError("xdg-mime absent")
     for mime in MIMES:
-        subprocess.run(["xdg-mime", "default", DESKTOP, mime], check=True)
+        subprocess.run(["xdg-mime", "default", DESKTOP, mime], check=True, env={**os.environ, "DE":"generic","XDG_CURRENT_DESKTOP":"Droi","DESKTOP_SESSION":"droi","KDE_FULL_SESSION":"","KDE_SESSION_VERSION":""})
     for binary in ("kbuildsycoca6", "kbuildsycoca5"):
         if shutil.which(binary):
             subprocess.run([binary, "--noincremental"], check=False)

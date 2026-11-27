@@ -24,4 +24,14 @@ if [ -x /usr/bin/droi-notify ]; then
 else
   echo "Droi: notification program missing from guest; restart after updating APK" >&2
 fi
+# Run provisioning in a terminal, leaving the desktop responsive.
+if /usr/bin/droi-apps defaults-needed; then
+  if command -v konsole >/dev/null; then
+    konsole --separate --hold -p tabtitle="Installation Droi" -e /usr/bin/droi-apps defaults &
+  elif command -v xterm >/dev/null; then
+    xterm -hold -title "Installation Droi" -e /usr/bin/droi-apps defaults &
+  else
+    /usr/bin/droi-apps defaults &
+  fi
+fi
 /usr/bin/droi-shell
