@@ -101,3 +101,7 @@ Le téléchargeur du client Steam ARM64 utilise huit travailleurs par défaut (m
 ## Droi Game Downloader
 
 Le menu Démarrer propose un lanceur GTK pour SteamRE DepotDownloader 3.4.0 ARM64, installé à la demande depuis sa release GitHub épinglée (taille contrôlée, pas de SHA-256 publié pour cet asset). Saisir l’AppID ou le lien Steam et sélectionner 8 à 32 téléchargements parallèles. Connexion QR ou identifiant et Steam Guard dans le terminal, sans stockage du mot de passe par Droi. Les jeux sont téléchargés dans `~/.local/share/droi/games/<appid>` ; la reprise utilise le moteur DepotDownloader. Les fichiers ne sont pas automatiquement enregistrés dans Steam ; DRM, Proton et compatibilité PRoot doivent être vérifiés séparément.
+
+## Déploiement des programmes lors des mises à jour APK
+
+Les scripts Droi sont embarqués dans les assets Linux de l’APK et installés à chaque changement d’identité APK par SessionFiles. La CI vérifie que chaque script de la boucle de packaging est enregistré pour la copie dans les rootfs existants et que le contenu de l’APK correspond à la source. Fermer puis rouvrir la session Ubuntu après la mise à jour ; aucune réinstallation ni suppression des données n’est nécessaire.

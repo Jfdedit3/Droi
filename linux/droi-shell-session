@@ -13,11 +13,15 @@ for _ in $(seq 1 40); do
   if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id #'; then break; fi
   sleep 0.1
 done
-/usr/bin/droi-notify &
-notify=$!
-for _ in $(seq 1 20); do
-  if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner org.freedesktop.Notifications 2>/dev/null | grep -q true; then break; fi
-  kill -0 "$notify" 2>/dev/null || break
-  sleep 0.1
-done
+if [ -x /usr/bin/droi-notify ]; then
+  /usr/bin/droi-notify &
+  notify=$!
+  for _ in $(seq 1 20); do
+    if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner org.freedesktop.Notifications 2>/dev/null | grep -q true; then break; fi
+    kill -0 "$notify" 2>/dev/null || break
+    sleep 0.1
+  done
+else
+  echo "Droi: notification program missing from guest; restart after updating APK" >&2
+fi
 /usr/bin/droi-shell

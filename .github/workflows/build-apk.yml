@@ -526,6 +526,7 @@ jobs:
           export DROI_VERSION_NAME="0.7.1-droi.$GITHUB_RUN_NUMBER"
           ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION"
           python3 tools/release/check_session_assets.py app/build/outputs/apk/release/app-release.apk
+          python3 .droi/tests/test_droi_assets.py app/build/outputs/apk/release/app-release.apk
           python3 tools/release/runtime_inputs.py apk app/build/outputs/apk/release/app-release.apk
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/Droi-Desktop-arm64.apk
