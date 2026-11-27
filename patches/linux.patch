@@ -222,7 +222,42 @@ index bbacb76..01397ee 100755
  progress() {
    local mb=$(( (done_bytes + $(size_of "$1")) / 1000000 ))
    [ -z "${3:-}" ] && [ "$mb" = "${shown_mb:-}" ] && [ "$2" = "${shown_part:-}" ] && return 0
-@@ -241,6 +250,7 @@ run_parallel() {
+@@ -166,6 +175,9 @@
+ }
+ 
+-parallel=${DD_STEAM_PARALLEL:-4}
+-case $parallel in ''|*[!0-9]*|0) parallel=1 ;; esac
++# Bounded concurrency: eight client packages by default, never more than twelve.
++parallel=${DD_STEAM_PARALLEL:-8}
++case $parallel in ''|*[!0-9]*|0|0*) parallel=8 ;; esac
++[ "${#parallel}" -le 2 ] || parallel=12
++[ "$parallel" -le 12 ] || parallel=12
+ flock_command=${DD_STEAM_FLOCK:-flock}
+ command -v "$flock_command" > /dev/null 2>&1 || parallel=1
+@@ -212,4 +224,6 @@
+   echo 1 > "$state/next"
+-  while read -r block file sum size; do
+-    index=$((index + 1))
++  # Largest packages start first to reduce the long single-file tail.
++  sort -k4,4nr "$list" > "$state/ordered" || return 1
++  while read -r block file sum size; do
++    index=$((index + 1))
+     blocks[index]=$block files[index]=$file sums[index]=$sum sizes[index]=$size
+@@ -218,3 +232,3 @@
+     fi
+-  done < "$list"
++  done < "$state/ordered"
+   local count=$index total_bytes=0
+@@ -231,4 +245,6 @@
+         fetched=""
+-        for host in "${cdn_order[@]}"; do
+-          if fetch_one "$host/$file" "$dir/$file" "${sizes[index]}" "${sums[index]}" "${blocks[index]}"; then
++        # Spread workers across Valve CDN endpoints; retain all mirror fallbacks.
++        for ((attempt=0; attempt<${#cdn_order[@]}; attempt++)); do
++          host=${cdn_order[$(((slot - 1 + attempt) % ${#cdn_order[@]}))]}
++          if fetch_one "$host/$file" "$dir/$file" "${sizes[index]}" "${sums[index]}" "${blocks[index]}"; then
+             fetched=$host
+@@ -241,6 +257,7 @@ run_parallel() {
            exit 1
          fi
          if [ -n "$unpack" ]; then
@@ -230,7 +265,7 @@ index bbacb76..01397ee 100755
            unzip_alone "$dir/$file" || { : > "$state/failed"; exit 1; }
            : > "$dir/$file.unpacked"
            rm -f "$dir/$file"
-@@ -389,6 +399,11 @@ if [ -n "$sync" ]; then
+@@ -389,6 +406,11 @@ if [ -n "$sync" ]; then
    echo "== STEP $(date -u +%H:%M:%S) updating the arm64 Steam client to $version (was ${installed:-none}) for the x86-64 client"
  fi
  if [ -z "$applied" ]; then
@@ -241,8 +276,7 @@ index bbacb76..01397ee 100755
 +fi
  total=$(grep -c . "$work/parts" 2>/dev/null || echo 0)
  total_bytes=$(awk '{ n += $4 } END { print n + 0 }' "$work/parts")
- 
-@@ -418,6 +433,7 @@ while read -r block file sum size; do
+@@ -418,6 +440,7 @@ while read -r block file sum size; do
      fi
    done
    [ -n "$fetched" ] || { echo "droiddeck-steam-install: $file failed on every CDN" >&2; exit 1; }
@@ -250,7 +284,7 @@ index bbacb76..01397ee 100755
    unzip -qo "$parts/$file" -d "$steam_root"
    : > "$parts/$file.unpacked"
    rm -f "$parts/$file"
-@@ -451,6 +467,7 @@ ln -sfn "$steam_root/linuxarm64" "$HOME/.steam/sdkarm64"
+@@ -451,6 +474,7 @@ ln -sfn "$steam_root/linuxarm64" "$HOME/.steam/sdkarm64"
  ln -sfn "$steam_root/steamrtarm64" "$HOME/.steam/binarm64"
  ln -sfn "$steam_root/linux32" "$HOME/.steam/sdk32"
  echo "$version" > "$stamp"

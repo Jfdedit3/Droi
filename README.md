@@ -93,3 +93,7 @@ Ouvre Droi Update depuis le menu Démarrer pour actualiser les dépôts et insta
 ### Compatibilité Chromium et notifications
 
 Brave et ChatGPT passent par `droi-chromium-launch` avec rendu logiciel X11 et WebGL désactivé pour éviter les échecs de buffers sous PRoot. Les journaux de lancement sont dans `~/.local/state/droi/`. Le sandbox n'est désactivé qu'après accord ou option explicite. Droi démarre son propre service de notifications D-Bus, sans dépendre de Plasma. Les profils utilisateur sont conservés.
+
+## Téléchargements Steam
+
+Le téléchargeur du client Steam ARM64 utilise huit travailleurs par défaut (maximum douze via `DD_STEAM_PARALLEL`), commence par les plus gros composants et répartit les requêtes entre les CDN Valve. Les fichiers incomplets restent repris et les empreintes SHA-256 sont toujours vérifiées avant extraction. Ce changement n'agit pas sur le débit interne de SteamPipe pour les jeux. Pour les jeux déjà installés sur un autre PC, activer le transfert local dans les paramètres de téléchargement Steam.
