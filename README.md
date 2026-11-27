@@ -149,3 +149,7 @@ Droi télécharge et exécute le script officiel `https://opencode.ai/v2/install
 ## Autorisation Chromium mémorisable
 
 ChatGPT et Brave proposent au premier lancement une confirmation française du mode PRoot sans sandbox Chromium. Choisir « Autoriser et mémoriser » évite la répétition de la confirmation pour cette application uniquement. « Cette fois seulement » ne mémorise rien et « Annuler » ne lance rien. La préférence est enregistrée avec des permissions privées. Réinitialisation : `droi-apps reset-sandbox chatgpt` ou `droi-apps reset-sandbox brave`. Le sandbox reste désactivé en mode compatibilité ; cette modification ne restaure pas son isolation.
+
+## Droi Plasma Aurora
+
+Le profil Plasma 2 remplace le fond DroidDeck par un fond vectoriel original Aurora, ajoute un bouton Démarrer Droi, un panneau flottant avec icônes centrées, le style Breeze Dark, un accent bleu, des bordures de fenêtres réduites et des animations plus courtes. Il sauvegarde une fois l'ancienne disposition Plasma, puis laisse les réglages utilisateur intacts aux démarrages suivants. Seul le raccourci Return.desktop identique au raccourci généré par DroidDeck est déplacé dans la sauvegarde. Aucun widget tiers ni téléchargement de thème. Le rendu exact et la prise en charge du panneau flottant dépendent de la version Plasma installée.

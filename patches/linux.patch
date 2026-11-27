@@ -1,7 +1,7 @@
 diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/droiddeck-desktop
 --- a/tools/linuxfs/desktop/droiddeck-desktop
 +++ b/tools/linuxfs/desktop/droiddeck-desktop
-@@ -1,236 +1,325 @@
+@@ -1,236 +1,375 @@
 -#!/bin/bash
 -set -u
 -export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=KDE XDG_SESSION_DESKTOP=KDE DESKTOP_SESSION=plasma
@@ -274,9 +274,37 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +ln -sf /usr/local/bin/droiddeck-steam-shim /usr/local/bin/steam 2>/dev/null
 +python3 /usr/local/bin/droiddeck-desktop-games 2>&1 | sed 's/^/[games] /'
 +python3 /usr/local/bin/droiddeck-desktop-programs 2>&1 | sed 's/^/[programs] /'
-+# Droi configures the native Plasma panel once per layout revision. The layout is written at every
-+# start, and a panel made before this version (Kubuntu's own, or the first SteamOS one without the
-+# pager, clock and Plasma's stock pins) is set aside once so Plasma lays out the current one.
++# Original Droi Aurora artwork and icon, shipped locally with the desktop script.
++droi_wall=/usr/share/wallpapers/DroiAurora
++mkdir -p "$droi_wall/contents/images" /usr/share/icons/hicolor/scalable/apps
++cat > "$droi_wall/metadata.json" <<'DROI_WALL_META'
++{"KPlugin":{"Id":"DroiAurora","Name":"Droi Aurora","Description":"Droi midnight blue and cyan","Authors":[{"Name":"Droi"}],"License":"GPL-3.0-or-later"}}
++DROI_WALL_META
++cat > "$droi_wall/contents/images/1920x1080.svg" <<'DROI_WALL'
++<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
++<defs>
++ <linearGradient id="bg" x2="0.9" y2="1"><stop stop-color="#07101e"/><stop offset="1" stop-color="#122a4a"/></linearGradient>
++ <linearGradient id="a" x1="0" x2="1" y1="0" y2="0.8"><stop stop-color="#1946a3"/><stop offset=".55" stop-color="#4172e6"/><stop offset="1" stop-color="#40d9ed"/></linearGradient>
++ <linearGradient id="b" x1="0" x2="1" y1="1" y2="0"><stop stop-color="#0b2046"/><stop offset=".7" stop-color="#294fa9"/><stop offset="1" stop-color="#9bc9ff"/></linearGradient>
++ <radialGradient id="glow"><stop stop-color="#3977e9" stop-opacity=".32"/><stop offset="1" stop-color="#3977e9" stop-opacity="0"/></radialGradient>
++</defs>
++<rect width="1920" height="1080" fill="url(#bg)"/>
++<ellipse cx="1240" cy="490" rx="860" ry="620" fill="url(#glow)"/>
++<path d="M-80 920 C280 1040 630 920 890 530 S1510 110 2010 230 L2010 520 C1490 280 1180 550 1020 810 S520 1200 -80 1110Z" fill="url(#b)"/>
++<path d="M-90 850 C360 1010 680 720 930 435 S1510 60 2020 200 L2020 350 C1510 215 1240 365 1040 625 S530 1080 -90 980Z" fill="url(#a)"/>
++<path d="M-90 850 C360 1010 680 720 930 435 S1510 60 2020 200" fill="none" stroke="#a5ddff" stroke-opacity=".65" stroke-width="3"/>
++<path d="M0 1020 C460 1110 810 855 1030 685 S1610 385 1920 515" fill="none" stroke="#6194fb" stroke-opacity=".35" stroke-width="2"/>
++<g transform="translate(96 108)" fill="#d3e5ff" opacity=".86"><rect width="14" height="14" rx="3"/><rect x="18" width="14" height="14" rx="3"/><rect y="18" width="14" height="14" rx="3"/><rect x="18" y="18" width="14" height="14" rx="3"/></g>
++<text x="145" y="132" font-family="sans-serif" font-size="25" letter-spacing="5" fill="#d3e5ff" opacity=".86">DROI</text>
++</svg>
++DROI_WALL
++cat > /usr/share/icons/hicolor/scalable/apps/droi-start.svg <<'DROI_ICON'
++<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
++<defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#77d8ff"/><stop offset="1" stop-color="#3178ed"/></linearGradient></defs>
++<g fill="url(#g)"><rect x="8" y="8" width="22" height="22" rx="4"/><rect x="34" y="8" width="22" height="22" rx="4"/><rect x="8" y="34" width="22" height="22" rx="4"/><rect x="34" y="34" width="22" height="22" rx="4"/></g>
++</svg>
++DROI_ICON
++# The stock Plasma layout is customized once per version, not on every login.
 +dd_layout=/usr/share/plasma/look-and-feel/com.valve.vapor.desktop/contents/layouts
 +if [ -d "$dd_layout" ]; then
 +  cat > "$dd_layout/org.kde.plasma.desktop-layout.js" <<'LAYOUT'
@@ -284,14 +312,16 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +for (var i = 0; i < desktops.length; i++) {
 +    desktops[i].wallpaperPlugin = "org.kde.image";
 +    desktops[i].currentConfigGroup = ["Wallpaper", "org.kde.image", "General"];
-+    desktops[i].writeConfig("Image", "file:///usr/share/wallpapers/DroidDeck");
++    desktops[i].writeConfig("Image", "file:///usr/share/wallpapers/DroiAurora/contents/images/1920x1080.svg");
 +}
 +
 +var panel = new Panel;
 +var panelScreen = panel.screen;
 +panel.location = "bottom";
-+panel.height = 2 * Math.ceil(gridUnit * 2.8 / 2);
++panel.height = 2 * Math.ceil(gridUnit * 3.0 / 2);
 +panel.alignment = "center";
++panel.floating = true;
++panel.lengthMode = "fill";
 +
 +const maximumAspectRatio = 21 / 9;
 +if (panel.formFactor === "horizontal") {
@@ -309,7 +339,8 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +kickoff.currentConfigGroup = ["Shortcuts"];
 +kickoff.writeConfig("global", "Alt+F1");
 +kickoff.currentConfigGroup = ["General"];
-+kickoff.writeConfig("icon", "start-here-kde");
++kickoff.writeConfig("icon", "droi-start");
++kickoff.writeConfig("showActionButtonCaptions", true);
 +kickoff.writeConfig("favorites", [
 +    "applications:droi-brave.desktop",
 +    "applications:droi-chatgpt.desktop",
@@ -331,6 +362,7 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +    "applications:droi-chatgpt.desktop",
 +    "applications:org.kde.konsole.desktop",
 +    "applications:droi-update.desktop",
++    "applications:systemsettings.desktop",
 +]);
 +
 +panel.addWidget("org.kde.plasma.panelspacer");
@@ -351,22 +383,37 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +}
 +var clock = panel.addWidget("org.kde.plasma.digitalclock");
 +clock.currentConfigGroup = ["Appearance"];
-+clock.writeConfig("dateFormat", "isoDate");
++clock.writeConfig("dateFormat", "shortDate");
++clock.writeConfig("showDate", true);
++clock.writeConfig("use24hFormat", 2);
 +panel.addWidget("org.kde.plasma.showdesktop");
 +LAYOUT
 +fi
 +dd_panel_rc="${XDG_CONFIG_HOME:-$HOME/.config}/plasma-org.kde.plasma.desktop-appletsrc"
 +dd_panel_stamp="${XDG_CONFIG_HOME:-$HOME/.config}/droiddeck-panel-layout"
-+if [ "$(cat "$dd_panel_stamp" 2>/dev/null)" != droi-plasma-1 ]; then
-+  dd_panel_backup="$dd_panel_rc.before-droi-plasma-1"
++if [ "$(cat "$dd_panel_stamp" 2>/dev/null)" != droi-plasma-2 ]; then
++  dd_panel_backup="$dd_panel_rc.before-droi-plasma-2"
 +  [ -e "$dd_panel_backup" ] && dd_panel_backup="$dd_panel_backup.$$"
 +  if [ ! -f "$dd_panel_rc" ] || mv "$dd_panel_rc" "$dd_panel_backup"; then
-+    mkdir -p "$(dirname "$dd_panel_stamp")" && echo droi-plasma-1 > "$dd_panel_stamp"
++    mkdir -p "$(dirname "$dd_panel_stamp")" && echo droi-plasma-2 > "$dd_panel_stamp"
 +    if [ -d "$dd_layout" ]; then
 +      kwriteconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage com.valve.vapor.desktop
 +    fi
++    # Use the existing Breeze assets; no untrusted downloaded plasmoids.
 +    kwriteconfig6 --file kdeglobals --group General --key ColorScheme BreezeDark
++    kwriteconfig6 --file kdeglobals --group General --key AccentColor 72,150,246
++    kwriteconfig6 --file kdeglobals --group Icons --key Theme breeze-dark
++    kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle Breeze
++    kwriteconfig6 --file plasmarc --group Theme --key name breeze-dark
++    kwriteconfig6 --file kcminputrc --group Mouse --key cursorTheme breeze_cursors
++    kwriteconfig6 --file kcminputrc --group Mouse --key cursorSize 24
 +    kwriteconfig6 --file kwinrc --group Windows --key FocusPolicy ClickToFocus
++    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key library org.kde.breeze
++    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key theme Breeze
++    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnLeft ""
++    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnRight IAX
++    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key BorderSize None
++    kwriteconfig6 --file kdeglobals --group KDE --key AnimationDurationFactor 0.5
 +  fi
 +fi
 +# startplasma applies this file over the session environment, and keeps what an earlier session wrote.
@@ -411,12 +458,15 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
 +if [ ! -e "$HOME/.config/droiddeck-desktop-icons" ]; then
 +  mkdir -p "$desktop_dir" "$HOME/.config"
-+  cp -f /usr/share/applications/droiddeck-return-gaming.desktop "$desktop_dir/Return.desktop" 2>/dev/null
 +  cp -f /usr/share/applications/steamdeck-steam.desktop "$desktop_dir/steam.desktop" 2>/dev/null
 +  chmod +x "$desktop_dir"/*.desktop 2>/dev/null
 +  touch "$HOME/.config/droiddeck-desktop-icons"
 +fi
-+[ -f "$desktop_dir/Return.desktop" ] && cp -f /usr/share/applications/droiddeck-return-gaming.desktop "$desktop_dir/Return.desktop" 2>/dev/null
++# Remove only the generated obsolete gaming-mode shortcut; keep user files.
++if [ -f "$desktop_dir/Return.desktop" ] && cmp -s "$desktop_dir/Return.desktop" /usr/share/applications/droiddeck-return-gaming.desktop; then
++  mkdir -p "$HOME/.local/state/droi/desktop-backup"
++  mv -n "$desktop_dir/Return.desktop" "$HOME/.local/state/droi/desktop-backup/Return.desktop"
++fi
 +if command -v flatpak >/dev/null 2>&1 && [ ! -d /var/lib/pacman ]; then
 +  FLATPAK_BWRAP=/usr/local/bin/droiddeck-bwrap flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo >/dev/null 2>&1 &
 +fi
