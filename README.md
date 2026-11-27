@@ -107,3 +107,7 @@ Le menu Démarrer propose un lanceur GTK pour SteamRE DepotDownloader 3.4.0 ARM6
 Les scripts Droi sont embarqués dans les assets Linux de l’APK et installés à chaque changement d’identité APK par SessionFiles. La CI vérifie que chaque script de la boucle de packaging est enregistré pour la copie dans les rootfs existants et que le contenu de l’APK correspond à la source. Fermer puis rouvrir la session Ubuntu après la mise à jour ; aucune réinstallation ni suppression des données n’est nécessaire.
 
 Les fenêtres secondaires Steam sont ramenées dans la zone visible au moment de leur création. Ce traitement ne modifie pas les jeux ni les fichiers de Steam. L'interface Steam et Proton restent à tester sur Android.
+
+## Configuration initiale complète
+
+Au premier démarrage du bureau, Droi ouvre une fenêtre de configuration automatique avant l’interface principale. Il actualise les dépôts, installe les dépendances de bureau, les outils de téléchargement et Node.js, met à jour les paquets Ubuntu sans suppression ni changement de version majeure, installe les applications par défaut puis vérifie APT. Les fichiers et applications personnels restent intacts. Le marqueur `~/.local/state/droi/first-setup-v1` n'est écrit qu'après succès ; un échec peut être repris ou le bureau ouvert hors ligne. Journal : `~/.cache/droi/first-setup.log`. Relance manuelle : `droi-apps setup`. Steam, Proton et les pilotes spécifiques continuent à suivre les mécanismes Android/DroidDeck, et aucun jeu personnel n'est téléchargé automatiquement.

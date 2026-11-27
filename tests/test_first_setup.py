@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+from pathlib import Path
+root=Path(__file__).resolve().parents[1]
+apps=(root/"linux/droi-apps").read_text()
+session=(root/"linux/droi-shell-session").read_text()
+update=(root/"linux/droi-update").read_text()
+assert all(f"== SETUP {i}/5" in apps for i in range(1,6))
+assert apps.index('apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3') < apps.index('== SETUP 4/5')
+assert apps.index('defaults_needed || { echo "Certaines applications') < apps.index('mv -f "$setup_marker.tmp" "$setup_marker"')
+assert session.index("droi-update --first-run") < session.rindex("/usr/bin/droi-shell")
+assert '"setup"],stdout=subprocess.PIPE' in update
+assert "--no-remove" in apps and "--with-new-pkgs" in apps
+print("First setup integration checks passed")

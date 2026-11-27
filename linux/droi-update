@@ -100,19 +100,21 @@ def maintain(emit, stage, update_apps=True):
             return True
 
 def main():
+    first_run = "--first-run" in sys.argv
     import gi
     gi.require_version("Gtk", "3.0")
     from gi.repository import Gtk, GLib
-    window = Gtk.Window(title="Droi Update")
+    window = Gtk.Window(title="Configuration initiale de Droi" if first_run else "Droi Update")
     window.set_default_size(700, 470)
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
     box.set_border_width(18)
     window.add(box)
     title = Gtk.Label()
-    title.set_markup('<span size="x-large" weight="bold">Droi Update</span>')
+    title.set_markup('<span size="x-large" weight="bold">' + ("Bienvenue dans Droi" if first_run else "Droi Update") + "</span>")
     title.set_xalign(0)
     box.pack_start(title, False, False, 0)
     intro = Gtk.Label(label="Mets à jour Ubuntu, les applications APT et OpenCode. Les données personnelles sont conservées.")
+    if first_run: intro.set_text("Préparation d’Ubuntu : dépendances, mises à jour et applications. Connecte-toi au Wi-Fi et laisse l’installation se terminer.")
     intro.set_line_wrap(True)
     intro.set_xalign(0)
     box.pack_start(intro, False, False, 0)
@@ -137,6 +139,11 @@ def main():
     row.pack_end(releases, False, False, 0)
     box.pack_end(row, False, False, 0)
     busy = False
+    completed = False
+    skip = Gtk.Button(label="Ouvrir le bureau hors ligne")
+    if first_run:
+        row.pack_end(skip, False, False, 0)
+        skip.connect("clicked", lambda *_: Gtk.main_quit() if not busy else None)
     def append(line):
         buffer.insert(buffer.get_end_iter(), line)
         if buffer.get_char_count() > 200000:
@@ -149,7 +156,7 @@ def main():
         progress.set_text("Étape %d/%d" % (min(index+1,total), total) if index<total else "Terminé")
         return False
     def finish(error=None):
-        nonlocal busy
+        nonlocal busy, completed
         busy = False
         start.set_sensitive(True)
         option.set_sensitive(True)
@@ -157,11 +164,23 @@ def main():
             status.set_text("Mise à jour interrompue")
             progress.set_text("Erreur")
             append("\nERREUR : " + str(error) + "\n")
-        append("\nJournal : " + str(LOG) + "\n")
+        append("\nJournal : " + str(CACHE / "first-setup.log" if first_run else LOG) + "\n")
+        if first_run:
+            skip.set_sensitive(True)
+            if not error:
+                completed = True
+                phase(5,5,"Configuration initiale terminée")
+                start.set_label("Ouvrir le bureau")
+                GLib.timeout_add(1000, lambda: (Gtk.main_quit(), False)[1])
+            else:
+                start.set_label("Réessayer")
         return False
     def run(_):
         nonlocal busy
         if busy:
+            return
+        if first_run and completed:
+            Gtk.main_quit()
             return
         busy = True
         update_apps = option.get_active()
@@ -169,8 +188,21 @@ def main():
         option.set_sensitive(False)
         buffer.set_text("")
         progress.set_fraction(0)
+        if first_run: skip.set_sensitive(False)
         def worker():
             try:
+                if first_run:
+                    CACHE.mkdir(mode=0o700,parents=True,exist_ok=True)
+                    with os.fdopen(os.open(CACHE / "first-setup.log",os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600),"a",encoding="utf-8") as log:
+                        with subprocess.Popen(["/usr/bin/droi-apps","setup"],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,text=True,errors="replace") as proc:
+                            for line in proc.stdout:
+                                log.write(line);log.flush()
+                                GLib.idle_add(append,line)
+                                match=re.match(r"== SETUP ([1-5])/5 (.*?) ==",line)
+                                if match: GLib.idle_add(phase,int(match.group(1))-1,5,match.group(2))
+                            if proc.wait(): raise RuntimeError("Installation initiale incomplète : code "+str(proc.returncode))
+                    GLib.idle_add(finish)
+                    return
                 maintain(lambda line: GLib.idle_add(append,line),
                          lambda i,t,n: GLib.idle_add(phase,i,t,n), update_apps)
                 GLib.idle_add(finish)
@@ -186,8 +218,11 @@ def main():
     start.connect("clicked",run)
     window.connect("delete-event",close)
     window.show_all()
+    if first_run:
+        option.hide(); releases.hide()
+        GLib.idle_add(lambda: (run(None),False)[1])
     Gtk.main()
-    return 0
+    return 0 if not first_run or completed else 1
 
 if __name__ == "__main__":
     sys.exit(main())

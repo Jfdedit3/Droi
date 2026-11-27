@@ -12,6 +12,7 @@ Droi : gestionnaire d’applications Linux
   droi-apps install opencode latest
   droi-apps install opencode VERSION
   droi-apps defaults
+  droi-apps setup
   droi-apps install brave latest
   droi-apps install brave VERSION
   droi-apps shortcuts
@@ -145,7 +146,48 @@ install_defaults() {
   else echo "Installation partielle. Relance droi-apps defaults pour réessayer."; fi
   return "$failed"
 }
+# One-time system setup is versioned independently from the APK.
+setup_marker="$HOME/.local/state/droi/first-setup-v1"
+setup_needed() { [ ! -f "$setup_marker" ] || ! defaults_needed; }
+system_setup() (
+  mkdir -p "$HOME/.cache/droi" "$(dirname "$setup_marker")"
+  exec 6>"$HOME/.cache/droi/setup.lock"
+  flock -n 6 || { echo "Configuration initiale déjà en cours."; exit 1; }
+  umask 077
+  export DEBIAN_FRONTEND=noninteractive
+  if [ ! -f "$setup_marker" ]; then
+    (
+      exec 8>"$HOME/.cache/droi/apps.lock"
+      flock -w 600 8 || { echo "Un autre gestionnaire Droi utilise APT."; exit 1; }
+      apt_cmd=("${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3)
+      echo "== SETUP 1/5 Actualisation des dépôts Ubuntu =="
+      "${apt_cmd[@]}" -o APT::Update::Error-Mode=any update || exit 1
+      echo "== SETUP 2/5 Dépendances du bureau et outils système =="
+      "${apt_cmd[@]}" -y --no-remove -o Dpkg::Options::=--force-confold install \
+        ca-certificates curl wget unzip zip xz-utils zstd util-linux \
+        python3 python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-3.0 gir1.2-wnck-3.0 \
+        openbox xwayland xauth x11-utils x11-xserver-utils dbus-x11 xdg-utils \
+        desktop-file-utils shared-mime-info fonts-noto-core fonts-dejavu-core \
+        libgl1-mesa-dri libglx-mesa0 nodejs npm git aria2 || exit 1
+      echo "== SETUP 3/5 Mises à jour Ubuntu (sécurité et paquets) =="
+      "${apt_cmd[@]}" -y --with-new-pkgs --no-remove -o Dpkg::Options::=--force-confold upgrade || exit 1
+      "${apt_cmd[@]}" check || exit 1
+    ) || exit 1
+  fi
+  echo "== SETUP 4/5 Brave, ChatGPT, OpenCode, DepotDownloader =="
+  # defaults manages its own locks. Do not hold apps.lock across this call.
+  /usr/bin/droi-apps defaults || exit 1
+  echo "== SETUP 5/5 Vérification de l'installation =="
+  defaults_needed || { echo "Certaines applications sont encore absentes."; exit 1; }
+  "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 check || exit 1
+  /usr/bin/droi-apps shortcuts || exit 1
+  printf '%s\n' "complete" > "$setup_marker.tmp"
+  mv -f "$setup_marker.tmp" "$setup_marker"
+  echo "Configuration initiale terminée. Le bureau va s'ouvrir."
+)
 case "${1:-}" in
+  setup-needed) if setup_needed; then exit 0; else exit 1; fi ;;
+  setup) system_setup ;;
   defaults-needed) if defaults_needed; then exit 1; else exit 0; fi ;;
   defaults) install_defaults ;;
   shortcuts) shortcuts ;;

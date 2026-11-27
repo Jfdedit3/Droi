@@ -32,6 +32,8 @@ jobs:
           python3 -m py_compile linux/droi-shell linux/droi-update linux/droi-game-downloader
           python3 tests/test_game_downloader.py
           python3 tests/test_droi_update.py
+          python3 tests/test_first_setup.py
+          python3 tests/test_droi_assets.py
           python3 tests/test_droi_shell.py
           bash -n linux/droi-doctor
           sh -n linux/opencode
