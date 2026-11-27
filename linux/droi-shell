@@ -259,7 +259,7 @@ def main():
             name=app.get_display_name()
             if not app.should_show() or not matches(name,app.get_description() or "",query): continue
             ident=app.get_id() or name
-            if "firefox" in ident.casefold() or ident in ("brave-browser.desktop","brave-browser-stable.desktop"): continue
+            if "firefox" in ident.casefold() or ("brave" in ident.casefold() and ident != "droi-brave.desktop") or ("chatgpt" in ident.casefold() and ident != "droi-chatgpt.desktop"): continue
             if ident in seen: continue
             seen.add(ident)
             btn=Gtk.Button(); vb=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=4)

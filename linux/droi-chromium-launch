@@ -1,0 +1,50 @@
+#!/bin/bash
+# Common launch path for real native Chromium/Electron packages under Droi X11.
+set -eu
+app="$1"; shift
+case "$app" in
+  chatgpt) executable=/usr/bin/chatgpt ;;
+  brave) executable=/usr/bin/brave-browser ;;
+  *) exit 2 ;;
+esac
+umask 077
+logdir="$HOME/.local/state/droi"
+mkdir -p "$logdir"
+log="$logdir/$app-launch.log"
+# Keep the last launch and its exit code without recording URL or login arguments.
+printf '\n=== %s %s ===\n' "$(date -Is)" "$app" >> "$log"
+export TMPDIR=/tmp
+export ELECTRON_OZONE_PLATFORM_HINT=x11
+export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+unset MESA_LOADER_DRIVER_OVERRIDE LIBGL_KOPPER_DRI2
+flags=(--ozone-platform=x11 --disable-dev-shm-usage --disable-gpu --disable-gpu-compositing --disable-webgl)
+# PRoot cannot provide Chromium's normal kernel sandbox; do not silently bypass it.
+if [ "$(id -u)" = 0 ] || [ "${DROI_DESKTOP_ENV:-}" = droi ]; then
+  if [[ " $* " != *" --no-sandbox "* ]]; then
+    message="Le sandbox Chromium ne fonctionne pas normalement sous PRoot. Lancer $app sans cette isolation ?"
+    if [ -t 0 ]; then
+      read -r -p "$message [o/N] " answer
+      case "$answer" in o|O|oui|Oui) ;; *) exit 0 ;; esac
+    elif command -v kdialog >/dev/null && [ -n "${DISPLAY:-}" ]; then
+      kdialog --warningyesno "$message" || exit 0
+    elif command -v zenity >/dev/null && [ -n "${DISPLAY:-}" ]; then
+      zenity --question --text="$message" || exit 0
+    else
+      if command -v konsole >/dev/null; then exec konsole -e "$0" "$app" "$@"; fi
+      if command -v xterm >/dev/null; then exec xterm -e "$0" "$app" "$@"; fi
+      echo "Confirmation du sandbox impossible." >> "$log"
+      exit 1
+    fi
+  fi
+  flags+=(--no-sandbox)
+fi
+printf 'mode=software-x11 webgl=disabled\n' >> "$log"
+set +e
+"$executable" "${flags[@]}" "$@" 2>&1 | tee -a "$log"
+rc=${PIPESTATUS[0]}
+printf 'exit=%s\n' "$rc" >> "$log"
+if [ "$rc" != 0 ] && [ -n "${DISPLAY:-}" ]; then
+  if command -v kdialog >/dev/null; then kdialog --error "$app : échec ($rc). Journal : $log" || true
+  elif command -v zenity >/dev/null; then zenity --error --text="$app : échec ($rc). Journal : $log" || true; fi
+fi
+exit "$rc"

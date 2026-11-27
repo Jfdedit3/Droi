@@ -1,0 +1,75 @@
+#!/usr/bin/python3
+"""Small freedesktop notification daemon for the Droi desktop."""
+import gi
+gi.require_version("Gtk","3.0")
+from gi.repository import Gio, GLib, Gtk, Gdk
+XML = """<node><interface name="org.freedesktop.Notifications">
+<method name="GetCapabilities"><arg type="as" direction="out"/></method>
+<method name="GetServerInformation"><arg type="s" direction="out"/><arg type="s" direction="out"/><arg type="s" direction="out"/><arg type="s" direction="out"/></method>
+<method name="Notify"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="as" direction="in"/><arg type="a{sv}" direction="in"/><arg type="i" direction="in"/><arg type="u" direction="out"/></method>
+<method name="CloseNotification"><arg type="u" direction="in"/></method>
+<signal name="NotificationClosed"><arg type="u"/><arg type="u"/></signal>
+</interface></node>"""
+PATH="/org/freedesktop/Notifications"
+IFACE="org.freedesktop.Notifications"
+windows={}
+counter=0
+connection=Gio.bus_get_sync(Gio.BusType.SESSION,None)
+def reflow():
+    screen=Gdk.Screen.get_default()
+    y=20
+    for win,timer in reversed(list(windows.values())):
+        win.move(max(0,screen.get_width()-350),y)
+        y+=win.get_size()[1]+8
+def close(ident,reason):
+    entry=windows.pop(ident,None)
+    if entry:
+        win,timer=entry
+        if timer and reason!=1: GLib.source_remove(timer)
+        win.destroy()
+        connection.emit_signal(None,PATH,IFACE,"NotificationClosed",GLib.Variant("(uu)",(ident,reason)))
+        reflow()
+    return False
+def call(conn,sender,path,interface,method,params,inv):
+    global counter
+    if method=="GetCapabilities":
+        inv.return_value(GLib.Variant("(as)",(["body"],)))
+    elif method=="GetServerInformation":
+        inv.return_value(GLib.Variant("(ssss)",("Droi Notifications","Droi","1.0","1.2")))
+    elif method=="CloseNotification":
+        close(params.unpack()[0],3);inv.return_value(None)
+    elif method=="Notify":
+        app,ident,icon,summary,body,actions,hints,timeout=params.unpack()
+        if ident in windows:
+            old,timer=windows.pop(ident)
+            if timer: GLib.source_remove(timer)
+            old.destroy()
+        else:
+            counter+=1;ident=counter
+        if len(windows)>=4: close(next(iter(windows)),4)
+        win=Gtk.Window(type=Gtk.WindowType.POPUP)
+        win.set_type_hint(Gdk.WindowTypeHint.NOTIFICATION)
+        win.set_keep_above(True);win.set_accept_focus(False)
+        win.set_default_size(330,90)
+        frame=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=5)
+        frame.set_border_width(12);win.add(frame)
+        head=Gtk.Box(spacing=8);frame.pack_start(head,False,False,0)
+        title=Gtk.Label(label=(app+" — "+summary)[:160]);title.set_xalign(0)
+        title.set_line_wrap(True);title.set_max_width_chars(36)
+        head.pack_start(title,True,True,0)
+        button=Gtk.Button(label="×");button.connect("clicked",lambda *_:close(ident,2))
+        head.pack_end(button,False,False,0)
+        label=Gtk.Label(label=body[:500]);label.set_line_wrap(True)
+        label.set_max_width_chars(38);label.set_xalign(0)
+        frame.pack_start(label,True,True,0)
+        win.show_all()
+        timer=0 if timeout==0 else GLib.timeout_add(max(1000,min(timeout if timeout>0 else 6000,60000)),lambda:close(ident,1))
+        windows[ident]=(win,timer);reflow()
+        inv.return_value(GLib.Variant("(u)",(ident,)))
+info=Gio.DBusNodeInfo.new_for_xml(XML)
+registration=connection.register_object(PATH,info.interfaces[0],call,None,None)
+reply=connection.call_sync("org.freedesktop.DBus","/org/freedesktop/DBus","org.freedesktop.DBus","RequestName",GLib.Variant("(su)",(IFACE,4)),GLib.VariantType.new("(u)"),Gio.DBusCallFlags.NONE,3000,None)
+if reply.unpack()[0] not in (1,4):
+    raise SystemExit("Notification service already owned")
+print("== Droi notification service ready",flush=True)
+Gtk.main()

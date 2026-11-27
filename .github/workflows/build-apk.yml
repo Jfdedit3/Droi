@@ -26,6 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           bash -n linux/droi-apps
+          bash -n linux/droi-chromium-launch
+          python3 -m py_compile linux/droi-notify
           bash -n linux/droi-shell-session
           python3 -m py_compile linux/droi-shell linux/droi-update
           python3 tests/test_droi_update.py
@@ -492,7 +494,7 @@ jobs:
           git apply .droi/patches/android.patch .droi/patches/linux.patch
           install -Dm644 .droi/android/DroiUpdates.kt app/src/main/java/com/droiddeck/launcher/DroiUpdates.kt
           install -Dm644 .droi/android/DesktopLauncherActivity.kt app/src/main/java/com/droiddeck/launcher/DesktopLauncherActivity.kt
-          for script in droi-apps droi-doctor droi-windows droi-shell droi-shell-session droi-update opencode; do
+          for script in droi-apps droi-doctor droi-windows droi-shell droi-shell-session droi-update droi-chromium-launch droi-notify opencode; do
             install -Dm755 ".droi/linux/$script" "tools/linuxfs/overlay/usr/bin/$script"
           done
           bash tools/ci/install-ubuntu-packages.sh gcc-aarch64-linux-gnu libc6-dev-arm64-cross

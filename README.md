@@ -89,3 +89,7 @@ Le sélecteur des huit bureaux est remplacé par Droi Desktop, un shell GTK3 ind
 ## Droi Update
 
 Ouvre Droi Update depuis le menu Démarrer pour actualiser les dépôts et installer les mises à jour Ubuntu et APT (Brave, ChatGPT si son dépôt est configuré), ainsi qu’OpenCode si présent. Les paquets nécessitant une suppression restent en attente ; pas de changement de version Ubuntu ni de mise à jour Android silencieuse. Le journal est `~/.cache/droi/system-update.log`. Le programme compare la version APK à la dernière release et indique si une installation via les paramètres Android est nécessaire.
+
+### Compatibilité Chromium et notifications
+
+Brave et ChatGPT passent par `droi-chromium-launch` avec rendu logiciel X11 et WebGL désactivé pour éviter les échecs de buffers sous PRoot. Les journaux de lancement sont dans `~/.local/state/droi/`. Le sandbox n'est désactivé qu'après accord ou option explicite. Droi démarre son propre service de notifications D-Bus, sans dépendre de Plasma. Les profils utilisateur sont conservés.
