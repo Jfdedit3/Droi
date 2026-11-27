@@ -69,6 +69,16 @@ Icon=chatgpt
 Terminal=false
 Categories=Network;Office;
 ENTRY
+  cat > "$dir/droi-update.desktop" <<'ENTRY'
+[Desktop Entry]
+Type=Application
+Name=Droi Update
+Comment=Mises à jour du système Ubuntu
+Exec=/usr/bin/droi-update
+Icon=system-software-update
+Terminal=false
+Categories=System;Settings;
+ENTRY
   rm -f -- "$dir/droi-chatgpt-web.desktop"
   cat > "$bin/droi-brave" <<'BRAVE'
 #!/bin/bash

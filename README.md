@@ -85,3 +85,7 @@ Le facteur GTK entier est désormais 1 pour tous les bureaux X11, et le DPI X11 
 ### Droi Desktop — interface unique
 
 Le sélecteur des huit bureaux est remplacé par Droi Desktop, un shell GTK3 indépendant inspiré de Windows 11. Openbox gère les fenêtres X11 (déplacement, redimensionnement, focus et fermeture) ; Droi dessine le fond abstrait original, la barre des tâches centrée, le menu Démarrer, la recherche et la liste des fenêtres actives via libwnck. Les applications sont lues via Gio et les raccourcis pointent vers les logiciels installés. Les composants GTK3/Openbox/Wnck manquants sont installés au premier lancement. Le pack de compatibilité historique et les anciens paquets ne sont pas purgés : ils peuvent contenir des dépendances, Dolphin, Konsole et les outils Wine. Aucun ancien bureau n'est proposé ni lancé par le chemin principal. La taille 100–200 % est conservée. Le shell n'est pas Windows et ne contient aucun asset Windows. Le rendu et l'intégration EWMH restent à valider sur Android.
+
+## Droi Update
+
+Ouvre Droi Update depuis le menu Démarrer pour actualiser les dépôts et installer les mises à jour Ubuntu et APT (Brave, ChatGPT si son dépôt est configuré), ainsi qu’OpenCode si présent. Les paquets nécessitant une suppression restent en attente ; pas de changement de version Ubuntu ni de mise à jour Android silencieuse. Le journal est `~/.cache/droi/system-update.log`. Le programme compare la version APK à la dernière release et indique si une installation via les paramètres Android est nécessaire.

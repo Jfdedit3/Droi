@@ -1,0 +1,193 @@
+#!/usr/bin/python3
+"""Droi Update: guest maintenance and Android release discovery."""
+import fcntl
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import urllib.request
+import urllib.error
+from pathlib import Path
+
+RELEASES = "https://github.com/Jfdedit3/Droi/releases"
+API = "https://api.github.com/repos/Jfdedit3/Droi/releases/latest"
+CACHE = Path.home() / ".cache/droi"
+LOG = CACHE / "system-update.log"
+
+def version_number(tag):
+    match = re.fullmatch(r"droi-(\d+)", tag or "")
+    return int(match.group(1)) if match else 0
+
+def commands(root):
+    apt = root + ["apt-get", "-o", "DPkg::Lock::Timeout=180"]
+    return [
+        ("Actualisation des dépôts APT", apt + ["-o", "APT::Update::Error-Mode=any", "-o", "Acquire::Retries=3", "update"]),
+        ("Mise à jour des paquets Ubuntu et applications APT", apt + ["-y", "--with-new-pkgs", "--no-remove", "upgrade"]),
+        ("Vérification des dépendances", apt + ["check"]),
+    ]
+
+def installed_opencode():
+    if not shutil.which("npm"):
+        return False
+    try:
+        result = subprocess.run(["npm", "list", "--global", "--prefix", "/usr/local", "--depth=0", "--json"],
+                                capture_output=True, text=True, timeout=20)
+        return "opencode-ai" in json.loads(result.stdout).get("dependencies", {})
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return False
+
+def release_status():
+    request = urllib.request.Request(API, headers={"Accept":"application/vnd.github+json",
+                                                   "User-Agent":"Droi-Update"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return "Aucune release APK publiée."
+        raise
+    tag = data.get("tag_name", "")
+    latest = version_number(tag)
+    installed = os.environ.get("DROI_VERSION_CODE", "")
+    if not latest:
+        return "Version APK distante non reconnue."
+    if not installed.isdecimal():
+        return "Dernière release APK : " + tag + " (version installée inconnue)."
+    if latest > int(installed):
+        return "Nouvelle version APK : " + tag + ". Ouvre les paramètres Android de Droi pour l'installer."
+    return "APK Droi à jour (version " + installed + ")."
+
+def maintain(emit, stage, update_apps=True):
+    CACHE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root = [] if os.geteuid() == 0 else ["/usr/local/bin/droiddeck-root"]
+    if root and not os.access(root[0], os.X_OK):
+        raise RuntimeError("Accès administrateur Linux indisponible.")
+    with open(CACHE / "apps.lock", "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Une installation est déjà en cours. Réessaie après sa fin.")
+        env = dict(os.environ, DEBIAN_FRONTEND="noninteractive", TMPDIR="/tmp", PYTHONUNBUFFERED="1")
+        steps = commands(root)
+        if update_apps and installed_opencode():
+            steps.append(("Mise à jour OpenCode", root + ["npm", "install", "--global", "--prefix", "/usr/local",
+                          "--include=optional", "--no-audit", "--no-fund", "opencode-ai@latest"]))
+        with os.fdopen(os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as log:
+            def output(line):
+                log.write(line)
+                log.flush()
+                emit(line)
+            for index, (name, argv) in enumerate(steps):
+                stage(index, len(steps)+1, name)
+                output("\n=== " + name + " ===\n")
+                with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                      stdin=subprocess.DEVNULL, text=True, errors="replace", env=env) as process:
+                    for line in process.stdout:
+                        output(line)
+                    if process.wait():
+                        raise RuntimeError(name + " : code " + str(process.returncode))
+            stage(len(steps), len(steps)+1, "Vérification APK Droi")
+            try:
+                output("\n" + release_status() + "\n")
+            except Exception as error:
+                output("\nVérification APK impossible : " + str(error) + "\n")
+                stage(len(steps)+1, len(steps)+1, "Linux mis à jour ; APK non vérifié")
+                return False
+            stage(len(steps)+1, len(steps)+1, "Mise à jour Linux terminée")
+            return True
+
+def main():
+    import gi
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk, GLib
+    window = Gtk.Window(title="Droi Update")
+    window.set_default_size(700, 470)
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+    box.set_border_width(18)
+    window.add(box)
+    title = Gtk.Label()
+    title.set_markup('<span size="x-large" weight="bold">Droi Update</span>')
+    title.set_xalign(0)
+    box.pack_start(title, False, False, 0)
+    intro = Gtk.Label(label="Mets à jour Ubuntu, les applications APT et OpenCode. Les données personnelles sont conservées.")
+    intro.set_line_wrap(True)
+    intro.set_xalign(0)
+    box.pack_start(intro, False, False, 0)
+    option = Gtk.CheckButton(label="Mettre aussi à jour OpenCode s’il est installé")
+    option.set_active(True)
+    box.pack_start(option, False, False, 0)
+    status = Gtk.Label(label="Prêt à rechercher et installer les mises à jour.")
+    status.set_xalign(0)
+    box.pack_start(status, False, False, 0)
+    progress = Gtk.ProgressBar(show_text=True)
+    box.pack_start(progress, False, False, 0)
+    view = Gtk.TextView(editable=False, monospace=True, cursor_visible=False)
+    buffer = view.get_buffer()
+    scroll = Gtk.ScrolledWindow()
+    scroll.add(view)
+    box.pack_start(scroll, True, True, 0)
+    row = Gtk.Box(spacing=8)
+    start = Gtk.Button(label="Rechercher et installer")
+    start.get_style_context().add_class("suggested-action")
+    releases = Gtk.LinkButton(uri=RELEASES, label="Versions APK")
+    row.pack_start(start, False, False, 0)
+    row.pack_end(releases, False, False, 0)
+    box.pack_end(row, False, False, 0)
+    busy = False
+    def append(line):
+        buffer.insert(buffer.get_end_iter(), line)
+        if buffer.get_char_count() > 200000:
+            buffer.delete(buffer.get_start_iter(), buffer.get_iter_at_offset(50000))
+        view.scroll_to_iter(buffer.get_end_iter(), 0, False, 0, 0)
+        return False
+    def phase(index, total, label):
+        status.set_text(label)
+        progress.set_fraction(index/total)
+        progress.set_text("Étape %d/%d" % (min(index+1,total), total) if index<total else "Terminé")
+        return False
+    def finish(error=None):
+        nonlocal busy
+        busy = False
+        start.set_sensitive(True)
+        option.set_sensitive(True)
+        if error:
+            status.set_text("Mise à jour interrompue")
+            progress.set_text("Erreur")
+            append("\nERREUR : " + str(error) + "\n")
+        append("\nJournal : " + str(LOG) + "\n")
+        return False
+    def run(_):
+        nonlocal busy
+        if busy:
+            return
+        busy = True
+        update_apps = option.get_active()
+        start.set_sensitive(False)
+        option.set_sensitive(False)
+        buffer.set_text("")
+        progress.set_fraction(0)
+        def worker():
+            try:
+                maintain(lambda line: GLib.idle_add(append,line),
+                         lambda i,t,n: GLib.idle_add(phase,i,t,n), update_apps)
+                GLib.idle_add(finish)
+            except Exception as error:
+                GLib.idle_add(finish,str(error))
+        threading.Thread(target=worker, daemon=True).start()
+    def close(*_):
+        if busy:
+            status.set_text("Installation en cours : ne ferme pas le programme.")
+            return True
+        Gtk.main_quit()
+        return False
+    start.connect("clicked",run)
+    window.connect("delete-event",close)
+    window.show_all()
+    Gtk.main()
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

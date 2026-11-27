@@ -256,7 +256,7 @@ index 9904584..d877c44 100644
          }
  
          val networkLink = LinuxNetworkLinkComponent(this, root)
-@@ -989,8 +1006,10 @@
+@@ -989,8 +1006,11 @@
          guest.add("USER=root")
          guest.add("PATH=" + LinuxRuntime.GUEST_PATH)
          guest.add("TERM=xterm-256color")
@@ -265,6 +265,7 @@ index 9904584..d877c44 100644
 +        if (SessionState.mode == MODE_DESKTOP) {
 +            guest.add("DROI_DESKTOP_ENV=" + com.droiddeck.launcher.DroiDesktop.selected(this).id)
 +            guest.add("DROI_DESKTOP_SCALE=" + com.droiddeck.launcher.DroiDesktop.scale(this))
++            guest.add("DROI_VERSION_CODE=" + com.droiddeck.launcher.BuildConfig.VERSION_CODE)
 +            val appLocale = com.droiddeck.launcher.core.AppLanguage.effective(this)
              guest.add("LANG=" + DesktopLocale.lang(appLocale))
              DesktopLocale.language(appLocale)?.let { guest.add("LANGUAGE=$it") }
