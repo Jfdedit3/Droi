@@ -157,3 +157,7 @@ Le profil Plasma 2 remplace le fond DroidDeck par un fond vectoriel original Aur
 ## Droi Start — Plasma Aurora 3
 
 Le panneau utilise le nouveau plasmoid `org.droi.start`, intégré localement au script de démarrage. Il propose une grille compacte, la recherche des applications par les modèles natifs KDE, une page toutes les applications, une zone de session Ubuntu sans affichage de root, et des animations QML de fondu, translation et échelle de 120 à 190 ms. La fermeture explicite est animée ; la fermeture imposée par Plasma (clic extérieur) reste gérée par le système. Le logo du fond d'écran est déplacé à droite. L'ancienne disposition du panneau est sauvegardée une seule fois. Kickoff reste installable comme alternative via les widgets Plasma. Les tests CI vérifient l'intégration et les métadonnées, pas le rendu QML sous Android.
+
+## Accès au stockage Android
+
+Le lanceur Droi demande l'autorisation d'accès aux fichiers partagés avant une nouvelle session Ubuntu. Sur Android 11 et ultérieur, il ouvre l'écran système d'accès à tous les fichiers ; sur les versions antérieures, il demande les permissions de stockage classiques. Le statut est actualisé au retour des paramètres. Un refus permet toujours d'ouvrir Ubuntu avec ses fichiers privés. Le montage PRoot expose le stockage partagé accessible sous `/sdcard` et `/storage/emulated/0`, sans contourner les restrictions Android (notamment les dossiers privés des autres applications). Fermer et relancer Ubuntu après avoir changé l'autorisation. Aucun fichier n'est supprimé, déplacé ni copié.

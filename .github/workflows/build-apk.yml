@@ -34,6 +34,7 @@ jobs:
           python3 tests/test_game_downloader.py
           python3 tests/test_droi_update.py
           python3 tests/test_first_setup.py
+          python3 tests/test_shared_storage.py
           python3 tests/test_droi_assets.py
           python3 tests/test_droi_shell.py
           bash -n linux/droi-doctor

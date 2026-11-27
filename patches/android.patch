@@ -547,3 +547,26 @@ diff --git a/app/src/main/java/com/droiddeck/launcher/agent/AgentGuest.kt b/app/
          val request = JSONObject()
              .put("kind", "exec")
              .put("argv", org.json.JSONArray(listOf("gamescopectl", name, value.toString())))
+diff --git a/app/src/main/java/com/droiddeck/launcher/runtime/LinuxRuntime.java b/app/src/main/java/com/droiddeck/launcher/runtime/LinuxRuntime.java
+--- a/app/src/main/java/com/droiddeck/launcher/runtime/LinuxRuntime.java
++++ b/app/src/main/java/com/droiddeck/launcher/runtime/LinuxRuntime.java
+@@ -251,9 +251,19 @@
+             bind(cmd, runtimeDir.getPath() + ":" + GUEST_RUNTIME_DIR);
+         }
+         if (sessionRoot != null) bind(cmd, sessionRoot.getPath());
+         if (externalStorage != null && externalStorage.isDirectory()) {
+             bind(cmd, externalStorage.getPath());
++            // Expose a stable guest path even if Android returns a different alias.
++            // Never bypass the Android application permission model.
++            if (externalStorage.list() != null) {
++                String host = externalStorage.getPath();
++                if (!host.equals("/storage/emulated/0"))
++                    bind(cmd, host + ":/storage/emulated/0");
++                bind(cmd, host + ":/sdcard");
++            } else {
++                android.util.Log.w("LinuxRuntime", "Shared Android storage cannot be listed; check all-files access");
++            }
+         }
+         File shm = new File(liveDir(context), "shm");
+         shm.mkdirs();
+         bind(cmd, shm.getPath() + ":/dev/shm");

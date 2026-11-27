@@ -16,6 +16,10 @@ import com.droiddeck.launcher.ui.SettingsGroup
 import com.droiddeck.launcher.ui.TabStrip
 import android.content.Intent
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import com.droiddeck.launcher.files.AllFilesAccess
 import java.io.File
 import com.droiddeck.launcher.runtime.LinuxRuntime
 import com.droiddeck.launcher.session.ComponentsManager
@@ -61,6 +65,32 @@ internal enum class DroiDesktop(val id: String, val label: String, val descripti
 }
 
 class DesktopLauncherActivity : ComponentActivity() {
+    private var storageGranted by mutableStateOf(false)
+    private var storagePrompt by mutableStateOf(false)
+
+    private fun hasSharedStorage(): Boolean =
+        if (Build.VERSION.SDK_INT >= 30) !AllFilesAccess.missing()
+        else checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+
+    override fun onResume() {
+        super.onResume()
+        storageGranted = hasSharedStorage()
+    }
+
+    private fun requestSharedStorage() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            AllFilesAccess.open(this)
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE), 714)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 714) storageGranted = hasSharedStorage()
+    }
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val components by lazy { ComponentsMenu(this, mainHandler) }
     private val protons by lazy { ProtonMenu(this, mainHandler, onInstalled = { components.refreshComponents() }) }
@@ -89,6 +119,23 @@ class DesktopLauncherActivity : ComponentActivity() {
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Droi Desktop", style = MaterialTheme.typography.headlineMedium)
+                        if (storagePrompt) {
+                            AlertDialog(
+                                onDismissRequest = { storagePrompt = false },
+                                title = { Text("Accès au stockage Android") },
+                                text = { Text("Pour afficher tes fichiers dans /sdcard et Storage depuis Ubuntu, Android doit autoriser Droi à accéder aux fichiers partagés. Tu peux refuser et continuer avec le stockage privé Ubuntu.") },
+                                confirmButton = {
+                                    Button(onClick = { storagePrompt = false; requestSharedStorage() }) {
+                                        Text("Autoriser dans Android")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { storagePrompt = false; startUbuntuSession() }) {
+                                        Text("Continuer sans accès")
+                                    }
+                                }
+                            )
+                        }
                         TabStrip(listOf("Bureaux", "Composants", "Paramètres"), tab, { tab = it })
                         if (tab == 0) {
                             SettingsGroup("Bureaux Linux") {
@@ -165,6 +212,11 @@ class DesktopLauncherActivity : ComponentActivity() {
                         } else if (tab == 1) {
                             DesktopComponents()
                         } else {
+                            SettingsGroup("Stockage Android") {
+                                Text(if (storageGranted) "Accès aux fichiers partagés autorisé" else "Accès aux fichiers partagés non autorisé : certains dossiers peuvent sembler vides.")
+                                MenuItem("Gérer l’accès au stockage", storageGranted) { requestSharedStorage() }
+                                Text("Après avoir changé l’autorisation, ferme puis relance Ubuntu pour actualiser les montages.", style = MaterialTheme.typography.bodySmall)
+                            }
                             XclipseSettings()
                             SettingsGroup("Mises à jour de Droi") {
                                 Text("Version installée : ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
@@ -292,6 +344,15 @@ class DesktopLauncherActivity : ComponentActivity() {
     }
 
     private fun launchUbuntu() {
+        storageGranted = hasSharedStorage()
+        if (!SessionState.running && !storageGranted) {
+            storagePrompt = true
+            return
+        }
+        startUbuntuSession()
+    }
+
+    private fun startUbuntuSession() {
         startActivity(Intent(this, SessionActivity::class.java)
             .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP))
     }
