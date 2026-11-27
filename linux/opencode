@@ -1,9 +1,14 @@
 #!/bin/sh
+# Prefer the official v2 install in the current user's home.
+if [ -x "$HOME/.opencode/bin/opencode" ]; then
+    exec "$HOME/.opencode/bin/opencode" "$@"
+fi
+# Preserve a previously verified binary as fallback until migration succeeds.
 if [ -f /usr/local/lib/droi-opencode/native-version ] && [ -x /usr/local/lib/droi-opencode/bin/opencode ]; then
     exec /usr/local/lib/droi-opencode/bin/opencode "$@"
 fi
-if [ -x /usr/local/bin/opencode ]; then
+if [ -x /usr/local/bin/opencode ] && [ "$(readlink -f /usr/local/bin/opencode)" != /usr/bin/opencode ]; then
     exec /usr/local/bin/opencode "$@"
 fi
-echo "OpenCode absent ou installation incomplète : droi-apps install opencode latest" >&2
+echo "OpenCode absent : droi-apps install opencode latest" >&2
 exit 1

@@ -14,9 +14,12 @@ print("First setup integration checks passed")
 
 assert apps.index('mv -f "$system_marker.tmp" "$system_marker"') < apps.index("== SETUP 4/5")
 assert "timeout=30" in apps
-assert "@opencode/cli-linux-arm64@$version" in apps
-assert "--ignore-scripts" in apps
-assert apps.index("PYVERIFY\n        [") < apps.index('mv -Tf "$prefix/bin/.opencode-new"')
+assert "https://opencode.ai/v2/install" in apps
+assert "--no-modify-path" in apps
+assert "npm install" not in apps
+assert "npm" not in update[update.index("def installed_opencode"):update.index("def release_status")]
+assert apps.index("PYVERIFY\n        )") < apps.index('mv -Tf "$stage" "$bin/opencode"')
+assert ".droi-v2-version" in apps
 assert "exit 3" in apps
 assert "[droi-setup]" in update
 assert "droiddeck-pipewire start" in session

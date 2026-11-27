@@ -124,7 +124,7 @@ installed_package() {
   [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" = "install ok installed" ]
 }
 opencode_ready() {
-  [ -f /usr/local/lib/droi-opencode/native-version ] && [ -x /usr/local/lib/droi-opencode/bin/opencode ] && [ ! -L /usr/local/lib/droi-opencode/bin/opencode ]
+  [ -s "$HOME/.opencode/bin/.droi-v2-version" ] && [ -x "$HOME/.opencode/bin/opencode" ] && [ ! -L "$HOME/.opencode/bin/opencode" ]
 }
 defaults_needed() {
   installed_package chatgpt && [ -x /usr/bin/chatgpt ] &&
@@ -308,50 +308,72 @@ case "${1:-}" in
         shortcuts
         ;;
       opencode)
-        if ! command -v npm >/dev/null; then
-          "${root_cmd[@]}" apt-get update
-          "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 install -y nodejs npm
-        fi
         [ "$(dpkg --print-architecture)" = arm64 ] || { echo "Ubuntu ARM64 requis" >&2; exit 1; }
-        prefix=/usr/local/lib/droi-opencode
-        # Select the glibc ARM64 package explicitly, bypassing the generic
-        # npm postinstall (which can fail to spawn the binary under PRoot).
-        npm_flags=(--registry=https://registry.npmjs.org/ --fetch-retries=2 --fetch-timeout=120000)
-        if [ "$version" = latest ]; then
-          version=$(npm "${npm_flags[@]}" view @opencode/cli@latest version) || exit 1
-        fi
-        [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Version OpenCode invalide : $version" >&2; exit 1; }
-        if opencode_ready && [ "$(cat "$prefix/native-version")" = "$version" ]; then
-          echo "OpenCode $version déjà installé."
-          exit 0
-        fi
+        # The official v2 installer resolves the current package namespace and
+        # downloads the native executable directly, without Node.js or npm.
         temp=$(mktemp -d)
         trap 'rm -rf -- "$temp"' EXIT
-        echo "OpenCode $version : téléchargement NPM Linux ARM64 glibc"
-        npm "${npm_flags[@]}" install --prefix "$temp" --ignore-scripts --no-audit --no-fund --no-save --omit=optional "@opencode/cli-linux-arm64@$version" || exit 1
-        native="$temp/node_modules/@opencode/cli-linux-arm64/bin/opencode"
-        [ -f "$native" ] || { echo "Binaire ARM64 absent du paquet NPM" >&2; exit 1; }
-        chmod 755 "$native" || exit 1
-        echo "OpenCode : vérification directe du binaire ARM64 (30 s maximum)"
-        python3 - "$native" "$version" <<'PYVERIFY'
-import subprocess, sys
+        bin="$HOME/.opencode/bin"
+        mkdir -p "$bin" "$temp/home"
+        args=(--no-modify-path)
+        if [ "$version" = latest ]; then
+          # Avoid fetching the full binary on every desktop startup.
+          remote=$(curl --proto '=https' --proto-redir '=https' -fsSL --connect-timeout 15 --max-time 30 --retry 2 https://opencode.ai/update/api/latest/cli/npm | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])') || exit 1
+        else
+          remote="$version"
+          args+=(--version "$version")
+        fi
+        [[ "$remote" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Version OpenCode invalide" >&2; exit 1; }
+        if opencode_ready && [ "$(cat "$bin/.droi-v2-version")" = "$remote" ]; then
+          echo "OpenCode $remote déjà installé."
+          exit 0
+        fi
+        echo "OpenCode : installateur officiel v2 (Linux ARM64)"
+        curl --proto '=https' --proto-redir '=https' -fsSL --connect-timeout 15 --max-time 60 --retry 2 https://opencode.ai/v2/install -o "$temp/install.sh" || exit 1
+        # Stage the official install in an isolated HOME so a failed download
+        # or execution never replaces an existing usable binary or profile.
+        HOME="$temp/home" SHELL=/bin/bash TMPDIR="$temp" bash "$temp/install.sh" "${args[@]}" || exit 1
+        native="$temp/home/.opencode/bin/opencode"
+        [ -f "$native" ] && [ -x "$native" ] && [ ! -L "$native" ] || { echo "Binaire OpenCode absent" >&2; exit 1; }
+        echo "OpenCode : vérification du binaire (30 secondes maximum)"
+        actual=$(python3 - "$native" <<'PYVERIFY'
+import os, re, subprocess, sys
 try:
-    result = subprocess.run([sys.argv[1], "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30, check=True)
-    print(result.stdout.strip(), flush=True)
-    if sys.argv[2] not in result.stdout:
-        raise RuntimeError("Version du binaire différente du paquet demandé")
-except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+    result = subprocess.run([sys.argv[1], "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30, check=True, env={**os.environ, "NO_COLOR":"1"})
+    version = result.stdout.strip().split()[-1].removeprefix("v")
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[.-][A-Za-z0-9.-]+)?", version):
+        raise ValueError("Version du binaire non reconnue")
+    print(version)
+except (OSError, subprocess.SubprocessError, ValueError, IndexError) as error:
     print("OpenCode ARM64 :", error, file=sys.stderr, flush=True)
     sys.exit(1)
 PYVERIFY
-        [ "$?" = 0 ] || exit 1
-        "${root_cmd[@]}" mkdir -p "$prefix/bin" || exit 1
-        "${root_cmd[@]}" install -m755 "$native" "$prefix/bin/.opencode-new" || exit 1
-        "${root_cmd[@]}" mv -Tf "$prefix/bin/.opencode-new" "$prefix/bin/opencode" || exit 1
-        printf '%s\n' "$version" > "$temp/version"
-        "${root_cmd[@]}" install -m644 "$temp/version" "$prefix/.native-version-new" || exit 1
-        "${root_cmd[@]}" mv -Tf "$prefix/.native-version-new" "$prefix/native-version" || exit 1
-        echo "OpenCode $version installé et vérifié."
+        ) || exit 1
+        if [ "$version" != latest ] && [ "$actual" != "$remote" ]; then
+          echo "Version OpenCode différente de celle demandée" >&2; exit 1
+        fi
+        stage=$(mktemp "$bin/.opencode-new.XXXXXX") || exit 1
+        if ! install -m755 "$native" "$stage" || ! mv -Tf "$stage" "$bin/opencode"; then
+          rm -f "$stage"; exit 1
+        fi
+        printf '%s\n' "$actual" > "$temp/version"
+        install -m644 "$temp/version" "$bin/.droi-v2-version" || exit 1
+        # The official installer also creates the compatibility command.
+        if [ -f "$temp/home/.opencode/bin/opencode2" ]; then
+          install -m755 "$temp/home/.opencode/bin/opencode2" "$bin/opencode2" || exit 1
+        fi
+        # Remove only stale, known npm links from our previous install path.
+        # Never delete unrelated user executables or Node.js itself.
+        for link in /usr/local/bin/opencode /usr/local/bin/opencode2; do
+          if [ -L "$link" ]; then
+            target=$(readlink "$link")
+            case "$target" in
+              *node_modules/@opencode/cli/*|*node_modules/opencode-ai/*|*/droi-opencode/*)
+                "${root_cmd[@]}" rm -f -- "$link" || true ;;
+            esac
+          fi
+        done
+        echo "OpenCode $actual installé et vérifié : $bin/opencode"
         ;;
       *) usage; exit 2 ;;
     esac

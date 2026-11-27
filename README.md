@@ -8,7 +8,7 @@ Télécharger l'APK ARM64 depuis [GitHub Releases](https://github.com/Jfdedit3/D
 
 ## Applications Linux : installées par défaut
 
-Au premier démarrage, Droi installe automatiquement Brave, ChatGPT, OpenCode 2 et le moteur DepotDownloader dans un terminal de progression. Les installations déjà réussies ne sont pas refaites. Firefox et les profils existants sont conservés. Dans Konsole :
+Au premier démarrage, Droi installe automatiquement Brave, ChatGPT, OpenCode 2 via son installateur officiel et le moteur DepotDownloader dans un terminal de progression. Les installations déjà réussies ne sont pas refaites. Firefox et les profils existants sont conservés. Dans Konsole :
 
 ```bash
 droi-apps status
@@ -19,7 +19,7 @@ droi-apps install brave latest
 droi-apps install brave VERSION
 ```
 
-Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obtenu d'une source de confiance. Le fichier DEB local est facultatif : sinon Droi télécharge le paquet ChatGPT ARM64 depuis l'URL de distribution et refuse une version ou empreinte différente. Pour Brave, Droi configure le dépôt APT signé stable selon [les instructions officielles](https://brave.com/linux/), installe le paquet ARM64 et définit le lanceur Brave comme navigateur par défaut. Sous PRoot en root, le lancement sans sandbox exige une confirmation explicite. Pour OpenCode, choisir une version via `npm view @opencode/cli versions --json`. Ne pas réutiliser un condensat calculé sur un téléchargement non vérifié comme preuve d'origine. 
+Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obtenu d'une source de confiance. Le fichier DEB local est facultatif : sinon Droi télécharge le paquet ChatGPT ARM64 depuis l'URL de distribution et refuse une version ou empreinte différente. Pour Brave, Droi configure le dépôt APT signé stable selon [les instructions officielles](https://brave.com/linux/), installe le paquet ARM64 et définit le lanceur Brave comme navigateur par défaut. Sous PRoot en root, le lancement sans sandbox exige une confirmation explicite. Pour OpenCode, Droi utilise l’installateur officiel `https://opencode.ai/v2/install`, sans NPM. Ne pas réutiliser un condensat calculé sur un téléchargement non vérifié comme preuve d'origine. 
 
 ## ChatGPT et diagnostics
 
@@ -141,3 +141,7 @@ Metacity remplace Openbox comme gestionnaire de fenêtres par défaut, tout en c
 ## Droi Plasma personnalisé (nouveau bureau par défaut)
 
 Droi utilise le pack KDE Plasma 6 natif de DroidDeck, vérifié par son catalogue d'origine. Le bureau principal utilise KWin/Wayland ; le panneau KDE contient Kickoff, des icônes épinglées, deux espaces flexibles, la zone de notification et l'horloge, avec le thème Vapor et les couleurs Breeze Dark. Le profil est initialisé une seule fois et l'ancien panneau Plasma est sauvegardé. Les raccourcis Brave, ChatGPT, Steam, Dolphin, Konsole, Droi Update, OpenCode et Game Downloader sont disponibles. La configuration et la mise à jour Ubuntu s'exécutent dans une session X11 temporaire avant de démarrer Plasma. Le bureau léger précédent n'est utilisé qu'en secours si Plasma retourne une erreur. Les données et préfixes Wine restent intacts. Le rendu réel, les menus Steam et la compatibilité Wayland/Xclipse restent à tester sur Android.
+
+## Installation OpenCode v2 (remplace les méthodes NPM précédentes)
+
+Droi télécharge et exécute le script officiel `https://opencode.ai/v2/install` avec `--no-modify-path`, dans un HOME temporaire. Le binaire natif est testé avant d’être placé dans `~/.opencode/bin/opencode`. La version validée est enregistrée pour éviter les téléchargements inutiles. Droi Update utilise la même méthode. Les anciens exécutables et profils sont conservés sauf les liens NPM connus qui masqueraient le nouveau lanceur. Node.js reste disponible pour les autres outils. Une installation manuelle peut utiliser `curl -fsSL https://opencode.ai/v2/install | bash`.

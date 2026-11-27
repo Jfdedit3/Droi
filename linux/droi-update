@@ -30,15 +30,9 @@ def commands(root):
     ]
 
 def installed_opencode():
-    if Path("/usr/local/lib/droi-opencode/native-version").is_file(): return True
-    if not shutil.which("npm"):
-        return False
-    try:
-        result = subprocess.run(["npm", "list", "--global", "--prefix", "/usr/local", "--depth=0", "--json"],
-                                capture_output=True, text=True, timeout=20)
-        return Path("/usr/local/lib/droi-opencode/bin/opencode").is_file() or "@opencode/cli" in json.loads(result.stdout).get("dependencies", {}) or "opencode-ai" in json.loads(result.stdout).get("dependencies", {})
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return False
+    return (os.access(Path.home() / ".opencode/bin/opencode", os.X_OK) or
+            Path("/usr/local/lib/droi-opencode/native-version").is_file() or
+            os.access("/usr/local/bin/opencode", os.X_OK))
 
 def release_status():
     request = urllib.request.Request(API, headers={"Accept":"application/vnd.github+json",
@@ -97,7 +91,7 @@ def maintain(emit, stage, update_apps=True):
                 stage(len(steps)+1, len(steps)+1, "Linux mis à jour ; APK non vérifié")
                 return False
     if update_apps and installed_opencode():
-        stage(3,4,"Vérification OpenCode ARM64")
+        stage(3,4,"Vérification OpenCode v2")
         with LOG.open("a",encoding="utf-8") as log:
             with subprocess.Popen(["/usr/bin/droi-apps","install","opencode","latest"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,text=True,errors="replace",env=env) as process:
                 for line in process.stdout:
