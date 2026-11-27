@@ -12,6 +12,7 @@ Le bureau ne télécharge plus de logiciels au démarrage et ne désinstalle plu
 
 ```bash
 droi-apps status
+droi-apps install chatgpt latest
 droi-apps install chatgpt VERSION SHA256 [FICHIER_DEB]
 droi-apps install opencode VERSION
 droi-apps install brave VERSION
@@ -21,7 +22,7 @@ Remplacer VERSION par une version réelle, SHA256 par le condensat attendu obten
 
 ## ChatGPT et diagnostics
 
-Le bureau Ubuntu utilise PRoot pour les programmes statiques. Le pack PRoot corrigé est embarqué. ChatGPT Web est disponible comme raccourci. ChatGPT Desktop en root demande explicitement confirmation avant de désactiver le sandbox Chromium ; hors root il essaie le lancement normal. PRoot n'est pas une frontière de sécurité, et la compatibilité Electron/Codex reste à valider sur le téléphone.
+Le bureau Ubuntu utilise PRoot pour les programmes statiques. Le pack PRoot corrigé est embarqué. Le raccourci ChatGPT installe au premier clic le paquet officiel ARM64 via HTTPS, puis ouvre le binaire natif. Le mode latest ne requiert pas de SHA-256 fourni manuellement ; le mode à version et empreinte épinglées reste disponible. Les mises à jour peuvent être installées via le dépôt APT signé configuré par le paquet officiel. Le raccourci web Droi a été supprimé. ChatGPT Desktop en root demande explicitement confirmation avant de désactiver le sandbox Chromium ; hors root il essaie le lancement normal. PRoot n'est pas une frontière de sécurité, et la compatibilité Electron/Codex reste à valider sur le téléphone.
 
 ```bash
 droi-doctor
