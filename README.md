@@ -145,3 +145,7 @@ Droi utilise le pack KDE Plasma 6 natif de DroidDeck, vérifié par son catalogu
 ## Installation OpenCode v2 (remplace les méthodes NPM précédentes)
 
 Droi télécharge et exécute le script officiel `https://opencode.ai/v2/install` avec `--no-modify-path`, dans un HOME temporaire. Le binaire natif est testé avant d’être placé dans `~/.opencode/bin/opencode`. La version validée est enregistrée pour éviter les téléchargements inutiles. Droi Update utilise la même méthode. Les anciens exécutables et profils sont conservés sauf les liens NPM connus qui masqueraient le nouveau lanceur. Node.js reste disponible pour les autres outils. Une installation manuelle peut utiliser `curl -fsSL https://opencode.ai/v2/install | bash`.
+
+## Autorisation Chromium mémorisable
+
+ChatGPT et Brave proposent au premier lancement une confirmation française du mode PRoot sans sandbox Chromium. Choisir « Autoriser et mémoriser » évite la répétition de la confirmation pour cette application uniquement. « Cette fois seulement » ne mémorise rien et « Annuler » ne lance rien. La préférence est enregistrée avec des permissions privées. Réinitialisation : `droi-apps reset-sandbox chatgpt` ou `droi-apps reset-sandbox brave`. Le sandbox reste désactivé en mode compatibilité ; cette modification ne restaure pas son isolation.

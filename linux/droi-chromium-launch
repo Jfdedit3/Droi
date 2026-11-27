@@ -1,7 +1,7 @@
 #!/bin/bash
 # Common launch path for real native Chromium/Electron packages under Droi X11.
 set -eu
-app="$1"; shift
+app="${1:-}"; [ "$#" -gt 0 ] || exit 2; shift
 case "$app" in
   chatgpt) executable=/usr/bin/chatgpt ;;
   brave) executable=/usr/bin/brave-browser ;;
@@ -11,6 +11,12 @@ umask 077
 logdir="$HOME/.local/state/droi"
 mkdir -p "$logdir"
 log="$logdir/$app-launch.log"
+consent="$logdir/$app-sandbox-consent-v1"
+if [ "$#" = 1 ] && [ "$1" = --reset-sandbox-consent ]; then
+  rm -f -- "$consent"
+  echo "Autorisation réinitialisée pour $app."
+  exit 0
+fi
 # Keep the last launch and its exit code without recording URL or login arguments.
 printf '\n=== %s %s ===\n' "$(date -Is)" "$app" >> "$log"
 export TMPDIR=/tmp
@@ -18,25 +24,46 @@ export ELECTRON_OZONE_PLATFORM_HINT=x11
 export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
 unset MESA_LOADER_DRIVER_OVERRIDE LIBGL_KOPPER_DRI2
 flags=(--ozone-platform=x11 --disable-dev-shm-usage --disable-gpu --disable-gpu-compositing --disable-webgl)
-# PRoot cannot provide Chromium's normal kernel sandbox; do not silently bypass it.
+# PRoot lacks the normal Chromium sandbox. Remember only explicit per-app
+# consent; an explicit command-line switch is valid for this launch only.
 if [ "$(id -u)" = 0 ] || [ "${DROI_DESKTOP_ENV:-}" = droi ]; then
-  if [[ " $* " != *" --no-sandbox "* ]]; then
-    message="Le sandbox Chromium ne fonctionne pas normalement sous PRoot. Lancer $app sans cette isolation ?"
+  explicit=0
+  for arg in "$@"; do [ "$arg" != --no-sandbox ] || explicit=1; done
+  if [ "$explicit" = 0 ] && [ "$(cat "$consent" 2>/dev/null || true)" != allow ]; then
+    case "$app" in chatgpt) label=ChatGPT ;; brave) label=Brave ;; esac
+    message="$label nécessite un mode de compatibilité sous PRoot : le sandbox Chromium sera désactivé. Cela réduit la protection contre les contenus malveillants."
+    remember=0
     if [ -t 0 ]; then
-      read -r -p "$message [o/N] " answer
-      case "$answer" in o|O|oui|Oui) ;; *) exit 0 ;; esac
-    elif command -v kdialog >/dev/null && [ -n "${DISPLAY:-}" ]; then
-      kdialog --warningyesno "$message" || exit 0
-    elif command -v zenity >/dev/null && [ -n "${DISPLAY:-}" ]; then
-      zenity --question --text="$message" || exit 0
+      printf '%s\n' "$message"
+      printf '1. Autoriser et mémoriser\n2. Autoriser cette fois\n3. Annuler\n'
+      read -r -p "Choix [1/2/3] : " answer || exit 0
+      case "$answer" in 1) remember=1 ;; 2) ;; *) exit 0 ;; esac
+    elif command -v kdialog >/dev/null && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+      # KDE returns 0 for Yes, 1 for No, 2 for Cancel. Do not persist a
+      # negative answer or launch on a failed/cancelled dialog.
+      decision=0
+      kdialog --title "$label — Compatibilité PRoot" --yes-label "Autoriser et mémoriser" --no-label "Cette fois seulement" --cancel-label "Annuler" --warningyesnocancel "$message" || decision=$?
+      case "$decision" in 0) remember=1 ;; 1) ;; *) exit 0 ;; esac
+    elif command -v zenity >/dev/null && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+      zenity --question --title="$label — Compatibilité PRoot" --text="$message" --ok-label="Autoriser" --cancel-label="Annuler" || exit 0
+      if zenity --question --title="$label" --text="Mémoriser cette autorisation pour les prochains lancements ?" --ok-label="Mémoriser" --cancel-label="Cette fois seulement"; then remember=1; fi
     else
       if command -v konsole >/dev/null; then exec konsole -e "$0" "$app" "$@"; fi
       if command -v xterm >/dev/null; then exec xterm -e "$0" "$app" "$@"; fi
       echo "Confirmation du sandbox impossible." >> "$log"
       exit 1
     fi
+    if [ "$remember" = 1 ]; then
+      tmp=$(mktemp "$logdir/.sandbox-consent.XXXXXX") || exit 1
+      if ! printf '%s\n' allow > "$tmp" || ! mv -fT -- "$tmp" "$consent"; then
+        rm -f -- "$tmp"
+        echo "Impossible de mémoriser l'autorisation." >&2
+        exit 1
+      fi
+    fi
   fi
-  flags+=(--no-sandbox)
+  [ "$explicit" = 1 ] || flags+=(--no-sandbox)
+  printf 'sandbox=disabled (compatibility)\n' >> "$log"
 fi
 printf 'mode=software-x11 webgl=disabled\n' >> "$log"
 set +e

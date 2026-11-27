@@ -27,6 +27,7 @@ jobs:
           set -euo pipefail
           bash -n linux/droi-apps
           bash -n linux/droi-chromium-launch
+          python3 tests/test_chromium_consent.py
           python3 -m py_compile linux/droi-notify
           bash -n linux/droi-shell-session
           python3 -m py_compile linux/droi-shell linux/droi-update linux/droi-game-downloader
