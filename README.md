@@ -161,3 +161,7 @@ Le panneau utilise le nouveau plasmoid `org.droi.start`, intégré localement au
 ## Accès au stockage Android
 
 Le lanceur Droi demande l'autorisation d'accès aux fichiers partagés avant une nouvelle session Ubuntu. Sur Android 11 et ultérieur, il ouvre l'écran système d'accès à tous les fichiers ; sur les versions antérieures, il demande les permissions de stockage classiques. Le statut est actualisé au retour des paramètres. Un refus permet toujours d'ouvrir Ubuntu avec ses fichiers privés. Le montage PRoot expose le stockage partagé accessible sous `/sdcard` et `/storage/emulated/0`, sans contourner les restrictions Android (notamment les dossiers privés des autres applications). Fermer et relancer Ubuntu après avoir changé l'autorisation. Aucun fichier n'est supprimé, déplacé ni copié.
+
+### Autorisation au premier démarrage de Droi
+
+À la première ouverture de l'application Android (y compris après migration depuis une version sans cette demande), Droi propose automatiquement l'accès aux fichiers partagés si celui-ci manque. L'autorisation réelle est toujours accordée par Android avec l'accord de l'utilisateur. Refuser ne lance pas Ubuntu par surprise ; un rappel reste disponible avant une nouvelle session et dans Paramètres > Stockage Android. Aucun accès n'est accordé silencieusement.

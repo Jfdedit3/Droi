@@ -67,6 +67,8 @@ internal enum class DroiDesktop(val id: String, val label: String, val descripti
 class DesktopLauncherActivity : ComponentActivity() {
     private var storageGranted by mutableStateOf(false)
     private var storagePrompt by mutableStateOf(false)
+    private var storagePromptForLaunch by mutableStateOf(false)
+    private val storagePrefs by lazy { getSharedPreferences("droi-storage", Context.MODE_PRIVATE) }
 
     private fun hasSharedStorage(): Boolean =
         if (Build.VERSION.SDK_INT >= 30) !AllFilesAccess.missing()
@@ -75,6 +77,16 @@ class DesktopLauncherActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         storageGranted = hasSharedStorage()
+        if (storageGranted) {
+            storagePrompt = false
+            storagePromptForLaunch = false
+        } else if (!SessionState.running && !storagePrefs.getBoolean("initial_permission_prompt_v1", false)) {
+            // Ask on first opening Droi, including upgrades from versions without this gate.
+            // Remember that we asked, not that Android granted access.
+            storagePrefs.edit().putBoolean("initial_permission_prompt_v1", true).apply()
+            storagePromptForLaunch = false
+            storagePrompt = true
+        }
     }
 
     private fun requestSharedStorage() {
@@ -121,16 +133,21 @@ class DesktopLauncherActivity : ComponentActivity() {
                         Text("Droi Desktop", style = MaterialTheme.typography.headlineMedium)
                         if (storagePrompt) {
                             AlertDialog(
-                                onDismissRequest = { storagePrompt = false },
+                                onDismissRequest = { storagePrompt = false; storagePromptForLaunch = false },
                                 title = { Text("Accès au stockage Android") },
                                 text = { Text("Pour afficher tes fichiers dans /sdcard et Storage depuis Ubuntu, Android doit autoriser Droi à accéder aux fichiers partagés. Tu peux refuser et continuer avec le stockage privé Ubuntu.") },
                                 confirmButton = {
-                                    Button(onClick = { storagePrompt = false; requestSharedStorage() }) {
+                                    Button(onClick = { storagePrompt = false; storagePromptForLaunch = false; requestSharedStorage() }) {
                                         Text("Autoriser dans Android")
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(onClick = { storagePrompt = false; startUbuntuSession() }) {
+                                    TextButton(onClick = {
+                                        val launchRequested = storagePromptForLaunch
+                                        storagePrompt = false
+                                        storagePromptForLaunch = false
+                                        if (launchRequested) startUbuntuSession()
+                                    }) {
                                         Text("Continuer sans accès")
                                     }
                                 }
@@ -346,6 +363,7 @@ class DesktopLauncherActivity : ComponentActivity() {
     private fun launchUbuntu() {
         storageGranted = hasSharedStorage()
         if (!SessionState.running && !storageGranted) {
+            storagePromptForLaunch = true
             storagePrompt = true
             return
         }
