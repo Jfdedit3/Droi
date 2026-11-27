@@ -127,3 +127,9 @@ Droi télécharge le paquet natif glibc `@opencode/cli-linux-arm64` depuis NPM, 
 ## Steam : mode bureau X11
 
 Le profil Droi applique les options CEF logiciel après la sélection des options Vulkan, évite le mode GPU intégré au processus du navigateur et n'exécute plus le script de sortie Big Picture dans une session déjà lancée en mode bureau. Ces changements ciblent notamment les boîtes de dialogue Propriétés et Désinstaller, sans toucher aux fichiers des jeux. La compatibilité sur Android doit être confirmée.
+
+## Compilations accélérées
+
+Le workflow conserve une archive complète des composants préparés, liée à la révision amont, au NDK, au patch PRoot et au workflow. Sur cache exact, elle est vérifiée puis réutilisée ; la validation de l'APK et la signature ne changent pas. L'état incrémental Android est conservé séparément par identité des sources Android et du toolchain. Le premier build remplit les caches ; les suivants peuvent les réutiliser.
+
+Le job **Fast Linux script bundle** publie indépendamment un artefact `Droi-Linux-Hotfix` après les contrôles. Il permet de tester un correctif de scripts sur une installation Ubuntu Droi ARM64 compatible sans attendre l'APK. Télécharger l'artefact depuis un run GitHub Actions réussi, extraire le ZIP puis le tar.gz dans Ubuntu et exécuter `bash install.sh` depuis le répertoire extrait. Ce mode manuel ne modifie pas les binaires natifs, Android ou le numéro de version APK. Utiliser exclusivement l'artefact de ce dépôt et d'un commit de confiance ; le manifeste contrôle les erreurs de transfert, pas l'identité du signataire. Une mise à jour APK peut remplacer les scripts. Sauvegarde automatique des anciens scripts avant remplacement. Le build complet reste obligatoire pour publier un APK.

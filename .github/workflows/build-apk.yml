@@ -61,6 +61,38 @@ jobs:
           grep -Fq -- '-displayfd 3' upstream/tools/linuxfs/desktop/droiddeck-desktop
           python3 tests/test_desktop_catalog.py upstream/tools/linuxfs/desktop/droiddeck-desktop
 
+  guest-hotfix:
+    name: Fast Linux script bundle (no APK compilation)
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Droid-Deck/DroidDeck
+          ref: d38fd373f0caf6574458abc574640f2d961d09d9
+          path: upstream
+          sparse-checkout: |
+            /*
+            !/docs/releases/media/
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Prepare validated guest scripts
+        run: |
+          git -C upstream apply --check ../patches/linux.patch
+          git -C upstream apply ../patches/linux.patch
+          python3 tools/fast_guest_bundle.py upstream dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Droi-Linux-Hotfix
+          path: dist/Droi-Linux-Hotfix.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   xbox:
     name: Prepare shared ARM64 runtime dependencies
     runs-on: ubuntu-24.04-arm
@@ -131,10 +163,21 @@ jobs:
           set -euo pipefail
           install -m 0644 .droi/chatgpt-proot.patch tools/proot/patches/0030-statx-empty-path.patch
           grep -q 'AT_EMPTY_PATH' tools/proot/patches/0030-statx-empty-path.patch
+      - name: Restore complete prepared runtime archive
+        id: prepared-cache
+        uses: actions/cache@v4
+        with:
+          path: app/build/prepared-components.tar.gz
+          key: prepared-runtime-v1-${{ runner.os }}-${{ runner.arch }}-d38fd373f0caf6574458abc574640f2d961d09d9-${{ env.NDK_VERSION }}-${{ hashFiles('.droi/chatgpt-proot.patch', '.droi/.github/workflows/build-apk.yml') }}
+      - name: Verify restored runtime archive
+        if: steps.prepared-cache.outputs.cache-hit == 'true'
+        run: python3 tools/components/prepare.py unpack --tree "$(git rev-parse 'HEAD^{tree}')"
       - name: Plan component identities
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         id: plan
         run: python3 tools/components/prepare.py plan
       - name: Cache remaining Linux runtime assets
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         id: preloads
         uses: actions/cache@v4
         with:
@@ -160,12 +203,14 @@ jobs:
           key: runtime-v9-${{ steps.plan.outputs.runtime }}
 
       - name: Cache PulseAudio 13.0 source
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         id: pa-src
         uses: actions/cache@v4
         with:
           path: pa13
           key: pulseaudio-src-${{ steps.plan.outputs.pulseaudio-source }}
       - name: Cache proot
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         id: proot
         uses: actions/cache@v4
         with:
@@ -174,6 +219,7 @@ jobs:
             app/src/main/jniLibs/arm64-v8a/libproot-loader.so
           key: proot-v2-${{ steps.plan.outputs.proot }}
       - name: Cache GOG Galaxy companion
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         id: comet
         uses: actions/cache@v4
         with:
@@ -181,6 +227,7 @@ jobs:
           key: comet-v2-${{ steps.plan.outputs.comet }}
 
       - name: Restore verified preload snapshots
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         id: component-preloads
         env:
           GH_TOKEN: ${{ github.token }}
@@ -188,6 +235,7 @@ jobs:
         run: python3 tools/components/prepare.py preload-snapshot
 
       - name: Prepare required Linux build tools once
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         env:
           COMPONENTS_TO_BUILD: >-
             ${{ steps.preloads.outputs.cache-hit != 'true' && 'runtime' || '' }}
@@ -197,45 +245,50 @@ jobs:
         run: python3 tools/components/prepare.py tools
 
       - name: Build changed ARM64 preloads
-        if: steps.component-preloads.outputs.arm64 != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.component-preloads.outputs.arm64 != 'true')
         run: python3 tools/components/prepare.py arm64-preloads
 
       - name: Prepare remaining Linux runtime assets
-        if: steps.preloads.outputs.cache-hit != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.preloads.outputs.cache-hit != 'true')
         run: python3 tools/components/prepare.py runtime
 
       - name: Build the Mali bridge's Linux side
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/components/prepare.py vkbridge
 
       - name: Fetch the Debian image the preloads build in
-        if: steps.component-preloads.outputs.x86 != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.component-preloads.outputs.x86 != 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: Droid-Deck/DroidDeck
         run: python3 tools/components/prepare.py debian-image
 
       - name: Build the x86 preloads FEX guests load (glibc 2.31)
-        if: steps.component-preloads.outputs.x86 != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.component-preloads.outputs.x86 != 'true')
         run: python3 tools/components/prepare.py x86-preloads
 
       - name: Bundle the droiddeck-esync packs
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/components/prepare.py esync
 
       - name: Fetch PulseAudio 13.0 source
-        if: steps.pa-src.outputs.cache-hit != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.pa-src.outputs.cache-hit != 'true')
         run: python3 tools/components/prepare.py pulseaudio-source
 
       - name: Fetch DirectAudio (tools/directaudio/release.env)
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/components/prepare.py directaudio
 
       - name: Build the AAudio sink into the audio bundle
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/components/prepare.py audio
 
       - name: Build proot
-        if: steps.proot.outputs.cache-hit != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.proot.outputs.cache-hit != 'true')
         run: python3 tools/components/prepare.py proot
 
       - name: Build the non-Adreno test additions (Mali bridge client, Venus GL probe, Xclipse layer)
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           bash tools/ci/install-ubuntu-packages.sh gcc-aarch64-linux-gnu libc6-dev-arm64-cross libvulkan-dev
@@ -249,6 +302,7 @@ jobs:
           aarch64-linux-gnu-strip --strip-unneeded "$D/usr/local/bin/droiddeck-glprobe"
 
       - name: Check the preloads
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           bash tools/linuxfs/check-preloads.sh app/src/main/assets/linuxfs
@@ -260,20 +314,24 @@ jobs:
           [ "$(readelf -Ws "$VKB" | awk '$4 == "FUNC" && $5 == "GLOBAL" && $7 != "UND" {sub(/@.*/, "", $8); print $8}' | grep -c '^vk_icd')" = 3 ] || { echo "::error::the bridge ICD does not export the loader interface"; exit 1; }
 
       - name: Build GOG Galaxy companion
-        if: steps.comet.outputs.cache-hit != 'true'
+        if: steps.prepared-cache.outputs.cache-hit != 'true' && (steps.comet.outputs.cache-hit != 'true')
         run: python3 tools/components/prepare.py comet
 
       - name: Build the DiRT 3 / DiRT Showdown ws2_32 stand-in
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/components/prepare.py dirt-ws2
 
       - name: Cache graphics driver inputs
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: app/build/quest-inputs
           key: quest-inputs-${{ hashFiles('tools/quest/build-driver.py') }}
       - name: Prepare graphics driver variants
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/quest/build-driver.py "$ANDROID_HOME/ndk/$NDK_VERSION"
       - name: Record and pack prepared components
+        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: python3 tools/components/prepare.py pack
       - uses: actions/upload-artifact@v4
         with:
@@ -515,6 +573,24 @@ jobs:
           test -s app/src/main/assets/packs/proot.tar.zst
           install -m644 tools/linuxfs/desktop/droiddeck-desktop app/src/main/assets/linuxfs/usr/local/bin/droiddeck-desktop
 
+      - name: Restore incremental Android compilation state
+        uses: actions/cache@v4
+        with:
+          path: |
+            .gradle/8.14/executionHistory
+            .gradle/8.14/fileHashes
+            app/build/kotlin
+            app/build/tmp/kotlin-classes
+            app/build/intermediates/javac
+            app/build/intermediates/dex
+            app/build/intermediates/project_dex_archive
+            app/build/intermediates/lint-cache
+            app/build/intermediates/lint_vital_intermediate_text_report
+            app/build/rustJniLibs
+            app/build/vkbridgeJniLibs
+          key: incremental-android-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NDK_VERSION }}-d38fd373f0caf6574458abc574640f2d961d09d9-${{ steps.rust.outputs.rustc }}-${{ hashFiles('.droi/android/**', '.droi/patches/android.patch', '.droi/chatgpt-proot.patch', 'app/build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            incremental-android-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NDK_VERSION }}-d38fd373f0caf6574458abc574640f2d961d09d9-${{ steps.rust.outputs.rustc }}-${{ hashFiles('.droi/android/**', '.droi/patches/android.patch', '.droi/chatgpt-proot.patch', 'app/build.gradle', 'gradle/wrapper/gradle-wrapper.properties') }}-
       - name: Build APK
         env:
           DROIDDECK_BUILD_LABEL: Droi Desktop
@@ -528,7 +604,7 @@ jobs:
           python3 tools/release/runtime_inputs.py record
           export DROI_VERSION_CODE=$((1000 + GITHUB_RUN_NUMBER))
           export DROI_VERSION_NAME="0.7.1-droi.$GITHUB_RUN_NUMBER"
-          ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION"
+          ./gradlew assembleRelease --console=plain --build-cache -PndkVersion="$NDK_VERSION"
           python3 tools/release/check_session_assets.py app/build/outputs/apk/release/app-release.apk
           python3 .droi/tests/test_droi_assets.py app/build/outputs/apk/release/app-release.apk
           python3 tools/release/runtime_inputs.py apk app/build/outputs/apk/release/app-release.apk
