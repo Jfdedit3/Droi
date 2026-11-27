@@ -13,11 +13,12 @@ def scale_value(value):
 
 def metrics(width, height, percent):
     s = percent / 100
-    # Reserve enough room for the start menu even at 720p and 200%.
-    return {"bar": min(68, max(42, round(40*s))),
-            "icon": min(36, max(22, round(22*s))),
-            "menu_w": min(width-24, max(300, round(460*s))),
-            "menu_h": min(height-90, max(280, round(360*s)))}
+    unit = min(s, max(.8, height / 620))
+    bar = min(54, max(34, round(34*unit)))
+    return {"bar": bar, "icon": min(28, max(18, round(20*unit))),
+            "menu_w": min(width-24, max(310, min(round(490*unit), round(width*.48)))),
+            "menu_h": min(height-bar-20, max(280, round(height*.72))),
+            "font": max(11, min(15, round(12*unit)))}
 
 def matches(name, description, query):
     return all(word in (name+" "+description).casefold() for word in query.casefold().split())
@@ -28,7 +29,7 @@ def main():
     gi.require_version("Gdk","3.0")
     gi.require_version("Wnck","3.0")
     gi.require_version("GdkX11","3.0")
-    from gi.repository import Gtk, Gdk, GdkX11, Gio, GLib, Wnck
+    from gi.repository import Gtk, Gdk, GdkX11, Gio, GLib, Wnck, Pango
     import cairo
     screen=Gdk.Screen.get_default()
     if screen is None:
@@ -42,15 +43,20 @@ def main():
         theme.set_property("gtk-application-prefer-dark-theme",False)
         theme.set_property("gtk-theme-name","Adwaita")
     css=Gtk.CssProvider()
-    css.load_from_data(b"""
-      #taskbar {background: #eaf2fd; border-top: 1px solid #aabed7;}
-      #start-menu {background: #edf4ff; border: 1px solid #aabed7; border-radius: 12px;}
-      #start-menu button, #taskbar button {background-image:none; border:0; box-shadow:none; background-color:transparent; border-radius:7px; padding:5px; color:#182b45;}
-      #start-menu button:hover, #taskbar button:hover {background-color:#d0e0f6;}
-      #taskbar button.active {background-color:#c6dbf7; border-bottom:3px solid #2478dc;}
-      #start-menu entry {background:#fff; border:1px solid #b7c8df; border-radius:6px; padding:8px;}
-      #start-menu label, #taskbar label {color:#192c46;}
-    """)
+    css.load_from_data(("""
+      #taskbar {background: #edf3fa; border-top: 1px solid #d3dfed;}
+      #start-menu {background: #edf3fb; border: 1px solid #c1cfe0; border-radius: 9px;}
+      #start-menu, #taskbar {font-family: "Segoe UI", "Noto Sans", sans-serif; font-size: %dpx; color:#20242b;}
+      #start-menu button, #taskbar button {background-image:none; border:0; box-shadow:none; background-color:transparent; border-radius:5px; padding:4px; color:#20242b;}
+      #start-menu button:hover, #taskbar button:hover {background-color:#dce6f3;}
+      #taskbar button.active {background-color:#dce6f3; border-bottom:3px solid #1674d1;}
+      #start-menu entry {font-size:%dpx; background:#fff; border:1px solid #d2dce8; border-bottom:2px solid #176bc0; border-radius:5px; padding:5px 9px; color:#20242b;}
+      #start-menu label, #taskbar label {color:#20242b;}
+      #start-menu .heading {font-weight:600;}
+      #start-menu .secondary {background-color:#f9fbfe; border:1px solid #d6e0ec; padding:3px 8px;}
+      #start-menu .muted {color:#596777;}
+      #start-menu .footer {background-color:#e4ebf5; padding:5px 12px; border-top:1px solid #d6e0eb;}
+    """ % (m["font"], m["font"])).encode())
     Gtk.StyleContext.add_provider_for_screen(screen,css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
     def window(hint, name, w,h,x,y):
         win=Gtk.Window()
@@ -72,20 +78,32 @@ def main():
         cr.scale(w,h)
         grad=cairo.LinearGradient(0,0,1,1)
         grad.add_color_stop_rgb(0,.67,.81,.94)
-        grad.add_color_stop_rgb(1,.08,.23,.54)
+        grad.add_color_stop_rgb(1,.49,.68,.84)
         cr.set_source(grad);cr.paint()
-        # Original abstract blue ribbon wallpaper, not a Windows asset.
-        for n in range(9):
-            t=n/9
-            cr.move_to(-.12,.88+t*.07)
-            cr.curve_to(.12,.16-t*.12,.62,-.20+t*.07,.93,.23+t*.08)
-            cr.curve_to(1.17,.60,.63,.66+t*.07,.28,.98)
-            cr.curve_to(.08,1.14,-.15,1.1,-.12,.88+t*.07)
-            g=cairo.LinearGradient(.1,.1,.9,.9)
-            g.add_color_stop_rgba(0,.05,.68,1,.85)
-            g.add_color_stop_rgba(.55,.08,.34,.90,.95)
-            g.add_color_stop_rgba(1,.02,.12,.46,.95)
-            cr.set_source(g);cr.fill()
+        # Separate folded ribbons, painted back-to-front with shaded edges.
+        def ribbon(cx,cy,angle,rx,ry,count,phase):
+            cr.save();cr.translate(cx,cy);cr.rotate(angle);cr.scale(rx,ry)
+            for i in range(count):
+                t=i/max(1,count-1)
+                cr.new_path()
+                cr.move_to(-.93+t*.32,.72-t*.20)
+                cr.curve_to(-1.28+t*.38,.08,-.63+t*.30,-1.22+t*.48,.13+t*.16,-.96+t*.38)
+                cr.curve_to(.95-t*.14,-1.00+t*.40,1.22-t*.28,-.26+t*.19,.83-t*.19,.36+t*.09)
+                cr.curve_to(.57-t*.10,.84,.04+t*.17,.92,-.93+t*.32,.72-t*.20)
+                g=cairo.LinearGradient(-.80,-.9,.75,.85)
+                g.add_color_stop_rgb(0,.04,.37+.12*t,.87)
+                g.add_color_stop_rgb(.22,.08,.68+.12*t,1)
+                g.add_color_stop_rgb(.48,.025,.36+.12*t,.92)
+                g.add_color_stop_rgb(.77,.015,.16+.08*t,.65)
+                g.add_color_stop_rgb(1,.012,.055,.30)
+                cr.set_source(g);cr.fill_preserve()
+                cr.set_line_width(.009)
+                cr.set_source_rgba(.45,.83,1,.45);cr.stroke()
+            cr.restore()
+        ribbon(.38,.58,-.34,.31,.36,9,0)
+        ribbon(.60,.36,-.63,.29,.43,10,0)
+        ribbon(.72,.69,.56,.29,.30,8,0)
+        ribbon(.40,.84,-.44,.32,.28,7,0)
         return False
     canvas.connect("draw",draw)
     bg.add(canvas);bg.show_all()
@@ -100,25 +118,60 @@ def main():
     menu=window(Gdk.WindowTypeHint.DIALOG,"start-menu",m["menu_w"],m["menu_h"],
                 (width-m["menu_w"])//2,height-bar_h-m["menu_h"]-8)
     menu.set_keep_above(True)
+    # Shape the X11 window without requiring a compositor (no black corners).
+    def shape_menu(widget,*_):
+        win=widget.get_window()
+        if win is None: return
+        w,h=widget.get_allocated_width(),widget.get_allocated_height()
+        radius=9
+        region=cairo.Region()
+        for y in range(h):
+            edge=min(y,h-1-y)
+            inset=round(radius-math.sqrt(max(0,radius*radius-(radius-edge)**2))) if edge<radius else 0
+            region.union(cairo.RectangleInt(inset,y,max(1,w-2*inset),1))
+        win.shape_combine_region(region,0,0)
+    menu.connect("size-allocate",shape_menu)
     menu.connect("delete-event",lambda *a: (menu.hide(),True)[1])
-    content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10)
-    content.set_border_width(16);menu.add(content)
-    search=Gtk.SearchEntry();search.set_placeholder_text("Rechercher une application")
+    root=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=0);menu.add(root)
+    content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=8)
+    content.set_border_width(18);root.pack_start(content,True,True,0)
+    search=Gtk.SearchEntry();search.set_placeholder_text("Rechercher des applications")
     content.pack_start(search,False,False,0)
-    headline=Gtk.Label(label="Applications épinglées");headline.set_xalign(0)
-    content.pack_start(headline,False,False,0)
+    header=Gtk.Box(spacing=6)
+    headline=Gtk.Label(label="Épinglé");headline.set_xalign(0)
+    headline.get_style_context().add_class("heading")
+    header.pack_start(headline,True,True,0)
+    all_button=Gtk.Button(label="Toutes les applications  ›")
+    all_button.get_style_context().add_class("secondary")
+    header.pack_end(all_button,False,False,0)
+    content.pack_start(header,False,False,0)
     pinned=Gtk.FlowBox();pinned.set_selection_mode(Gtk.SelectionMode.NONE)
-    pinned.set_max_children_per_line(5);pinned.set_min_children_per_line(3)
-    pinned.set_row_spacing(6);pinned.set_column_spacing(6)
+    columns=6 if m["menu_w"]>=480 else 4
+    pinned.set_max_children_per_line(columns);pinned.set_min_children_per_line(columns)
+    pinned.set_homogeneous(True);pinned.set_row_spacing(4);pinned.set_column_spacing(3)
     content.pack_start(pinned,False,False,0)
-    label=Gtk.Label(label="Toutes les applications");label.set_xalign(0);content.pack_start(label,False,False,0)
+    recommendation=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=8)
+    rec_label=Gtk.Label(label="Recommandations");rec_label.set_xalign(0)
+    rec_label.get_style_context().add_class("heading")
+    recommendation.pack_start(rec_label,False,False,0)
+    recent_box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=4)
+    recommendation.pack_start(recent_box,False,False,0)
+    content.pack_start(recommendation,True,True,0)
     scroll=Gtk.ScrolledWindow();scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC)
+    scroll.set_min_content_height(80)
     grid=Gtk.FlowBox();grid.set_selection_mode(Gtk.SelectionMode.NONE)
-    grid.set_min_children_per_line(3);grid.set_max_children_per_line(5)
-    grid.set_row_spacing(5);grid.set_column_spacing(5)
+    grid.set_min_children_per_line(columns);grid.set_max_children_per_line(columns)
+    grid.set_homogeneous(True);grid.set_row_spacing(4);grid.set_column_spacing(4)
     scroll.add(grid);content.pack_start(scroll,True,True,0)
-    footer=Gtk.Box(spacing=8);content.pack_end(footer,False,False,0)
-    footer.pack_start(Gtk.Label(label="●  Ubuntu • Droi"),False,False,0)
+    footer=Gtk.Box(spacing=8);footer.get_style_context().add_class("footer")
+    root.pack_end(footer,False,False,0)
+    profile=Gtk.Box(spacing=8)
+    profile_icon=Gtk.Image.new_from_icon_name("avatar-default",Gtk.IconSize.BUTTON)
+    profile_icon.set_pixel_size(24);profile.pack_start(profile_icon,False,False,0)
+    profile.pack_start(Gtk.Label(label=os.environ.get("USER","Ubuntu")),False,False,0)
+    footer.pack_start(profile,False,False,0)
+    recent=[]
+    all_mode=False
     def launch(argv):
         menu.hide()
         try:
@@ -131,14 +184,37 @@ def main():
             if shutil.which(command): return command
         return None
     def image(name,size=icon):
+        # Draw dark system glyphs so light-theme symbolic icons cannot vanish.
+        if name in ("system-search","system-shutdown","user-desktop"):
+            im=Gtk.DrawingArea();im.set_size_request(size,size)
+            def glyph(widget,cr):
+                cr.scale(widget.get_allocated_width()/24,widget.get_allocated_height()/24)
+                cr.set_source_rgb(.13,.19,.27);cr.set_line_width(1.8)
+                cr.set_line_cap(cairo.LINE_CAP_ROUND)
+                if name=="system-search":
+                    cr.arc(10,10,5.8,0,2*math.pi);cr.stroke()
+                    cr.move_to(14.4,14.4);cr.line_to(20,20);cr.stroke()
+                elif name=="system-shutdown":
+                    cr.arc(12,12,8,-math.pi*.25,math.pi*1.25);cr.stroke()
+                    cr.move_to(12,2);cr.line_to(12,11);cr.stroke()
+                else:
+                    cr.rectangle(5,5,14,13);cr.stroke()
+                return False
+            im.connect("draw",glyph);return im
         im=Gtk.Image.new_from_icon_name(name,Gtk.IconSize.DIALOG)
         im.set_pixel_size(size);return im
     def button(name,ico,action,caption=False):
         b=Gtk.Button();box=Gtk.Box(orientation=Gtk.Orientation.VERTICAL if caption else Gtk.Orientation.HORIZONTAL,spacing=4)
         box.pack_start(image(ico),False,False,0)
         if caption:
-            lb=Gtk.Label(label=name);lb.set_max_width_chars(15);lb.set_ellipsize(3);box.pack_start(lb,False,False,0)
-        b.add(box);b.set_tooltip_text(name);b.connect("clicked",lambda *_: action())
+            lb=Gtk.Label(label=name);lb.set_max_width_chars(12);lb.set_ellipsize(Pango.EllipsizeMode.END);box.pack_start(lb,False,False,0)
+        if caption: b.set_size_request(0,icon+27)
+        b.add(box);b.set_tooltip_text(name)
+        def invoke(*_):
+            if caption:
+                remember(name,ico,action)
+            action()
+        b.connect("clicked",invoke)
         return b
     def open_cmd(*argv): launch(list(argv))
     files=choose("dolphin","thunar","pcmanfm-qt","pcmanfm")
@@ -151,6 +227,26 @@ def main():
     if shutil.which("droiddeck-steam-launch"): favourites.append(("Steam","steam",lambda: open_cmd("droiddeck-steam-launch","desktop")))
     if shutil.which("chatgpt"): favourites.append(("ChatGPT","applications-internet",lambda: open_cmd("chatgpt","--no-sandbox")))
     if shutil.which("droi-windows"): favourites.append(("Processus Wine","application-x-executable",lambda: open_cmd("droi-windows","--wine-manager")))
+    def remember(name,ico,action):
+        recent[:] = [(n,i,a) for n,i,a in recent if n!=name]
+        recent.insert(0,(name,ico,action))
+        del recent[4:]
+    def show_recent():
+        for child in recent_box.get_children(): recent_box.remove(child)
+        if not recent:
+            empty=Gtk.Label(label="Les applications récemment ouvertes apparaîtront ici.")
+            empty.set_xalign(0);empty.set_line_wrap(True)
+            empty.get_style_context().add_class("muted")
+            recent_box.pack_start(empty,False,False,0)
+        else:
+            for name,ico,action in recent:
+                item=Gtk.Button();row=Gtk.Box(spacing=10)
+                row.pack_start(image(ico,22),False,False,0)
+                title=Gtk.Label(label=name);title.set_xalign(0)
+                row.pack_start(title,True,True,0);item.add(row)
+                item.connect("clicked",lambda _,a=action:a())
+                recent_box.pack_start(item,False,False,0)
+        recent_box.show_all()
     def rebuild_apps(*_):
         for child in grid.get_children(): grid.remove(child)
         query=search.get_text()
@@ -166,7 +262,7 @@ def main():
             gicon=app.get_icon()
             im=Gtk.Image.new_from_gicon(gicon,Gtk.IconSize.DIALOG) if gicon else image("application-x-executable")
             im.set_pixel_size(icon);vb.pack_start(im,False,False,0)
-            lb=Gtk.Label(label=name);lb.set_max_width_chars(14);lb.set_ellipsize(3);vb.pack_start(lb,False,False,0)
+            lb=Gtk.Label(label=name);lb.set_max_width_chars(12);lb.set_ellipsize(Pango.EllipsizeMode.END);vb.pack_start(lb,False,False,0)
             btn.add(vb);btn.set_tooltip_text(name)
             def start(_btn,app=app):
                 menu.hide()
@@ -174,13 +270,27 @@ def main():
                 except GLib.Error as e: print("Droi: application launch failed",e,flush=True)
             btn.connect("clicked",start);grid.add(btn)
         grid.show_all()
-    search.connect("search-changed",rebuild_apps)
+    def update_menu(*_):
+        active=all_mode or bool(search.get_text().strip())
+        headline.set_text("Toutes les applications" if active else "Épinglé")
+        all_button.set_label("‹ Retour" if active else "Toutes les applications  ›")
+        pinned.set_visible(not active);recommendation.set_visible(not active)
+        scroll.set_visible(active)
+        if active: rebuild_apps()
+    def toggle_all(*_):
+        nonlocal all_mode
+        all_mode=not (all_mode or bool(search.get_text().strip()))
+        search.set_text("");update_menu()
+    all_button.connect("clicked",toggle_all)
+    search.connect("search-changed",update_menu)
     def toggle_menu():
+        nonlocal all_mode
         if menu.get_visible(): menu.hide();return
-        search.set_text("")
+        all_mode=False;search.set_text("")
         for c in pinned.get_children(): pinned.remove(c)
         for name,ico,action in favourites: pinned.add(button(name,ico,action,True))
-        rebuild_apps();menu.show_all()
+        show_recent();menu.show_all();update_menu()
+        menu.resize(m["menu_w"],m["menu_h"])
         menu.move((width-m["menu_w"])//2,height-bar_h-m["menu_h"]-8)
         menu.present();search.grab_focus()
     def key(_win,event):
@@ -207,7 +317,7 @@ def main():
     center.pack_start(button("Rechercher","system-search",toggle_menu),False,False,0)
     for name,ico,action in favourites[:4]: center.pack_start(button(name,ico,action),False,False,0)
     center.pack_start(tasks,False,False,0)
-    clock=Gtk.Label();right.pack_start(clock,False,False,0)
+    clock=Gtk.Label();clock.set_justify(Gtk.Justification.RIGHT);right.pack_start(clock,False,False,0)
     def update_clock():
         clock.set_text(datetime.datetime.now().strftime("%H:%M\n%d/%m/%Y"));return True
     update_clock();GLib.timeout_add_seconds(30,update_clock)
