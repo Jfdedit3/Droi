@@ -39,11 +39,10 @@ if [ "$(id -u)" = 0 ] || [ "${DROI_DESKTOP_ENV:-}" = droi ]; then
       read -r -p "Choix [1/2/3] : " answer || exit 0
       case "$answer" in 1) remember=1 ;; 2) ;; *) exit 0 ;; esac
     elif command -v kdialog >/dev/null && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
-      # KDE returns 0 for Yes, 1 for No, 2 for Cancel. Do not persist a
-      # negative answer or launch on a failed/cancelled dialog.
-      decision=0
-      kdialog --title "$label — Compatibilité PRoot" --yes-label "Autoriser et mémoriser" --no-label "Cette fois seulement" --cancel-label "Annuler" --warningyesnocancel "$message" || decision=$?
-      case "$decision" in 0) remember=1 ;; 1) ;; *) exit 0 ;; esac
+      # Require an affirmative first response; failures and dismissal must
+      # never be interpreted as permission to disable the sandbox.
+      kdialog --title "$label — Compatibilité PRoot" --yes-label "Autoriser" --no-label "Annuler" --warningyesno "$message" || exit 0
+      if kdialog --title "$label" --yes-label "Mémoriser" --no-label "Cette fois seulement" --yesno "Mémoriser cette autorisation pour les prochains lancements ?"; then remember=1; fi
     elif command -v zenity >/dev/null && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
       zenity --question --title="$label — Compatibilité PRoot" --text="$message" --ok-label="Autoriser" --cancel-label="Annuler" || exit 0
       if zenity --question --title="$label" --text="Mémoriser cette autorisation pour les prochains lancements ?" --ok-label="Mémoriser" --cancel-label="Cette fois seulement"; then remember=1; fi
