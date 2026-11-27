@@ -225,7 +225,9 @@ def main():
     if terminal: favourites.append(("Terminal","utilities-terminal",lambda: open_cmd(terminal)))
     if browser: favourites.append(("Navigateur","web-browser",lambda: open_cmd(browser)))
     if shutil.which("droiddeck-steam-launch"): favourites.append(("Steam","steam",lambda: open_cmd("droiddeck-steam-launch","desktop")))
-    if shutil.which("chatgpt"): favourites.append(("ChatGPT","applications-internet",lambda: open_cmd("chatgpt","--no-sandbox")))
+    chatgpt_launcher = "/usr/local/bin/chatgpt" if os.geteuid()==0 else str(Path.home()/".local/bin/chatgpt")
+    if os.access(chatgpt_launcher,os.X_OK):
+        favourites.append(("ChatGPT","chatgpt" if Gtk.IconTheme.get_default().has_icon("chatgpt") else "applications-internet",lambda: open_cmd(chatgpt_launcher)))
     if shutil.which("droi-windows"): favourites.append(("Processus Wine","application-x-executable",lambda: open_cmd("droi-windows","--wine-manager")))
     def remember(name,ico,action):
         recent[:] = [(n,i,a) for n,i,a in recent if n!=name]
