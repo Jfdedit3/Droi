@@ -302,7 +302,6 @@ jobs:
           aarch64-linux-gnu-strip --strip-unneeded "$D/usr/local/bin/droiddeck-glprobe"
 
       - name: Check the preloads
-        if: steps.prepared-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           bash tools/linuxfs/check-preloads.sh app/src/main/assets/linuxfs
@@ -577,8 +576,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            .gradle/8.14/executionHistory
-            .gradle/8.14/fileHashes
+            .gradle/8.10.2/executionHistory
+            .gradle/8.10.2/fileHashes
             app/build/kotlin
             app/build/tmp/kotlin-classes
             app/build/intermediates/javac
