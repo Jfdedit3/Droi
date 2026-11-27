@@ -397,8 +397,8 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +        onTriggered: {
 +            const action = root.pendingAction
 +            root.pendingAction = null
-+            root.expanded = false
 +            if (action) action()
++            root.expanded = false
 +        }
 +    }
 +    onExpandedChanged: {
