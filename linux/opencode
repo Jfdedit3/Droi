@@ -1,9 +1,9 @@
 #!/bin/sh
-if [ -x /usr/local/lib/droi-opencode/bin/opencode ]; then
+if [ -f /usr/local/lib/droi-opencode/native-version ] && [ -x /usr/local/lib/droi-opencode/bin/opencode ]; then
     exec /usr/local/lib/droi-opencode/bin/opencode "$@"
 fi
 if [ -x /usr/local/bin/opencode ]; then
     exec /usr/local/bin/opencode "$@"
 fi
-echo "OpenCode absent : droi-apps install opencode latest" >&2
+echo "OpenCode absent ou installation incomplète : droi-apps install opencode latest" >&2
 exit 1

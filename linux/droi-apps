@@ -114,10 +114,13 @@ ENTRY
 installed_package() {
   [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null || true)" = "install ok installed" ]
 }
+opencode_ready() {
+  [ -f /usr/local/lib/droi-opencode/native-version ] && [ -x /usr/local/lib/droi-opencode/bin/opencode ] && [ ! -L /usr/local/lib/droi-opencode/bin/opencode ]
+}
 defaults_needed() {
   installed_package chatgpt && [ -x /usr/bin/chatgpt ] &&
   installed_package brave-browser && [ -x /usr/bin/brave-browser ] &&
-  [ -x /usr/local/lib/droi-opencode/bin/opencode ] &&
+  opencode_ready &&
   [ -x "$HOME/.local/share/droi/depotdownloader/DepotDownloader_3.4.0/DepotDownloader" ]
 }
 install_defaults() {
@@ -138,7 +141,7 @@ install_defaults() {
     /usr/bin/droi-apps install chatgpt latest || failed=1
   fi
   echo "== Vérification OpenCode =="
-  if [ ! -x /usr/local/lib/droi-opencode/bin/opencode ]; then
+  if ! opencode_ready; then
     /usr/bin/droi-apps install opencode latest || failed=1
   fi
   echo "== Vérification DepotDownloader =="
@@ -183,11 +186,15 @@ system_setup() (
   fi
   echo "== SETUP 4/5 Brave, ChatGPT, OpenCode, DepotDownloader =="
   # defaults manages its own locks. Do not hold apps.lock across this call.
-  /usr/bin/droi-apps defaults || exit 1
+  local app_result=0
+  /usr/bin/droi-apps defaults || app_result=$?
   echo "== SETUP 5/5 Vérification de l'installation =="
-  defaults_needed || { echo "Certaines applications sont encore absentes."; exit 1; }
   "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 check || exit 1
   /usr/bin/droi-apps shortcuts || exit 1
+  if [ "$app_result" != 0 ] || ! defaults_needed; then
+    echo "Ubuntu est prêt. Certaines applications restent à installer : droi-apps defaults."
+    exit 3
+  fi
   printf '%s\n' "complete" > "$setup_marker.tmp"
   mv -f "$setup_marker.tmp" "$setup_marker"
   echo "Configuration initiale terminée. Le bureau va s'ouvrir."
@@ -288,11 +295,46 @@ case "${1:-}" in
           "${root_cmd[@]}" apt-get update
           "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 install -y nodejs npm
         fi
+        [ "$(dpkg --print-architecture)" = arm64 ] || { echo "Ubuntu ARM64 requis" >&2; exit 1; }
         prefix=/usr/local/lib/droi-opencode
-        "${root_cmd[@]}" mkdir -p "$prefix"
-        "${root_cmd[@]}" npm install --global --prefix "$prefix" --include=optional --no-audit --no-fund "@opencode/cli@$version"
-        echo "OpenCode : vérification de l’exécutable (30 s maximum)"
-        timeout 30 "$prefix/bin/opencode" --version
+        # Select the glibc ARM64 package explicitly, bypassing the generic
+        # npm postinstall (which can fail to spawn the binary under PRoot).
+        npm_flags=(--registry=https://registry.npmjs.org/ --fetch-retries=2 --fetch-timeout=120000)
+        if [ "$version" = latest ]; then
+          version=$(npm "${npm_flags[@]}" view @opencode/cli@latest version) || exit 1
+        fi
+        [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] || { echo "Version OpenCode invalide : $version" >&2; exit 1; }
+        if opencode_ready && [ "$(cat "$prefix/native-version")" = "$version" ]; then
+          echo "OpenCode $version déjà installé."
+          exit 0
+        fi
+        temp=$(mktemp -d)
+        trap 'rm -rf -- "$temp"' EXIT
+        echo "OpenCode $version : téléchargement NPM Linux ARM64 glibc"
+        npm "${npm_flags[@]}" install --prefix "$temp" --ignore-scripts --no-audit --no-fund --no-save --omit=optional "@opencode/cli-linux-arm64@$version" || exit 1
+        native="$temp/node_modules/@opencode/cli-linux-arm64/bin/opencode"
+        [ -f "$native" ] || { echo "Binaire ARM64 absent du paquet NPM" >&2; exit 1; }
+        chmod 755 "$native" || exit 1
+        echo "OpenCode : vérification directe du binaire ARM64 (30 s maximum)"
+        python3 - "$native" "$version" <<'PYVERIFY'
+import subprocess, sys
+try:
+    result = subprocess.run([sys.argv[1], "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=30, check=True)
+    print(result.stdout.strip(), flush=True)
+    if sys.argv[2] not in result.stdout:
+        raise RuntimeError("Version du binaire différente du paquet demandé")
+except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+    print("OpenCode ARM64 :", error, file=sys.stderr, flush=True)
+    sys.exit(1)
+PYVERIFY
+        [ "$?" = 0 ] || exit 1
+        "${root_cmd[@]}" mkdir -p "$prefix/bin" || exit 1
+        "${root_cmd[@]}" install -m755 "$native" "$prefix/bin/.opencode-new" || exit 1
+        "${root_cmd[@]}" mv -Tf "$prefix/bin/.opencode-new" "$prefix/bin/opencode" || exit 1
+        printf '%s\n' "$version" > "$temp/version"
+        "${root_cmd[@]}" install -m644 "$temp/version" "$prefix/.native-version-new" || exit 1
+        "${root_cmd[@]}" mv -Tf "$prefix/.native-version-new" "$prefix/native-version" || exit 1
+        echo "OpenCode $version installé et vérifié."
         ;;
       *) usage; exit 2 ;;
     esac

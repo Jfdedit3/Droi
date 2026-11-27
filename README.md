@@ -119,3 +119,7 @@ Avant d'ouvrir Ubuntu, le lanceur Android vérifie la dernière release Droi et 
 ### Reprise de la configuration initiale et diagnostics
 
 Les étapes système réussies disposent de leur propre marqueur. Une installation applicative interrompue ne relance pas inutilement l'intégralité des mises à jour Ubuntu. La vérification OpenCode est bornée à 30 secondes, et la progression de configuration est recopiée dans le journal de session exportable. PipeWire démarre dans le bus D-Bus graphique et est arrêté avant la fin de celui-ci.
+
+### OpenCode ARM64 sous PRoot
+
+Droi télécharge le paquet natif glibc `@opencode/cli-linux-arm64` depuis NPM, à la version du paquet CLI officiel. Le postinstall générique n'est pas exécuté. Le binaire est testé directement avant remplacement ; la version installée est conservée si la mise à jour échoue. En cas d'échec d'une application, l'installation système peut être terminée et le bureau ouvert ; une prochaine tentative reprend les applications manquantes. Les profils et identifiants OpenCode restent intacts.
