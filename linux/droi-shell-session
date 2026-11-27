@@ -28,5 +28,7 @@ fi
 # compete with the first-run package installer. Offline recovery is available.
 if /usr/bin/droi-apps setup-needed; then
   /usr/bin/droi-update --first-run || echo "Droi: configuration initiale incomplète; reprise au prochain démarrage" >&2
+else
+  /usr/bin/droi-update --before-launch || echo "Droi: mise à jour indisponible; bureau ouvert en mode de secours" >&2
 fi
 /usr/bin/droi-shell

@@ -36,13 +36,14 @@ internal object DroiUpdates {
     val status = MutableStateFlow("")
     val ready = MutableStateFlow(0)
     val available = MutableStateFlow(0)
+    val working = MutableStateFlow(false)
     private fun directory(context: Context) = File(context.cacheDir, "droi-updates")
     private fun apk(context: Context, version: Int) = File(directory(context), "$version.apk")
     private val busy = AtomicBoolean()
 
     private fun prefs(context: Context) = context.getSharedPreferences("droi_updates", Context.MODE_PRIVATE)
 
-    fun isEnabled(context: Context) = prefs(context).getBoolean("automatic_download", false)
+    fun isEnabled(context: Context) = prefs(context).getBoolean("automatic_download", true)
 
     fun setEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean("automatic_download", enabled).apply()
@@ -59,6 +60,7 @@ internal object DroiUpdates {
             return
         }
 
+        working.value = true
         status.value = "Vérification…"
         Thread({
             try {
@@ -80,6 +82,7 @@ internal object DroiUpdates {
                 report(status.value)
             } finally {
                 busy.set(false)
+                working.value = false
             }
         }, "droi-updates").start()
     }

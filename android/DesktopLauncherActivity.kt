@@ -71,6 +71,17 @@ class DesktopLauncherActivity : ComponentActivity() {
             DroidDeckTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 var desktopChoice by rememberSaveable { mutableStateOf(false) }
+                var prelaunch by remember { mutableStateOf(false) }
+                val updateWorking by DroiUpdates.working.collectAsState()
+                val updateMessage by DroiUpdates.status.collectAsState()
+                val updateReady by DroiUpdates.ready.collectAsState()
+                val updateAvailable by DroiUpdates.available.collectAsState()
+                LaunchedEffect(prelaunch, updateWorking, updateMessage) {
+                    if (prelaunch && !updateWorking && (updateMessage == "Droi est à jour." || updateMessage == "Aucune version Droi disponible sur GitHub.")) {
+                        prelaunch = false
+                        launchUbuntu()
+                    }
+                }
                 var desktopScale by rememberSaveable { mutableIntStateOf(DroiDesktop.scale(this@DesktopLauncherActivity)) }
                 var automatic by remember { mutableStateOf(DroiUpdates.isEnabled(this)) }
                 androidx.activity.compose.BackHandler(enabled = tab != 0) { tab = 0 }
@@ -114,7 +125,8 @@ class DesktopLauncherActivity : ComponentActivity() {
                                                 if (!SessionState.running && SessionState.installing == null) {
                                                     DroiDesktop.selectScale(this@DesktopLauncherActivity, desktopScale)
                                                     desktopChoice = false
-                                                    launchUbuntu()
+                                                    prelaunch = true
+                                                    DroiUpdates.check(this@DesktopLauncherActivity, force = true)
                                                 } else {
                                                     Toast.makeText(this@DesktopLauncherActivity, "Une session ou installation est déjà en cours.", Toast.LENGTH_SHORT).show()
                                                 }
@@ -123,6 +135,32 @@ class DesktopLauncherActivity : ComponentActivity() {
                                         dismissButton = { TextButton(onClick = { desktopChoice = false }) { Text("Annuler") } },
                                     )
                                 }
+                            }
+                            if (prelaunch) {
+                                AlertDialog(
+                                    onDismissRequest = { if (!updateWorking) prelaunch = false },
+                                    title = { Text("Mises à jour avant démarrage") },
+                                    text = {
+                                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            Text(updateMessage.ifEmpty { "Vérification de Droi…" })
+                                            if (updateWorking) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                            if (!updateWorking && updateReady > 0 && updateReady == updateAvailable)
+                                                Text("Android doit confirmer l’installation de l’APK signé.")
+                                        }
+                                    },
+                                    confirmButton = {
+                                        if (!updateWorking && updateReady > 0 && updateReady == updateAvailable) {
+                                            Button(onClick = { DroiUpdates.install(this@DesktopLauncherActivity) }) { Text("Installer") }
+                                        } else if (!updateWorking && updateAvailable > 0) {
+                                            Button(onClick = { DroiUpdates.check(this@DesktopLauncherActivity, force = true, manual = true) }) { Text("Télécharger") }
+                                        } else if (!updateWorking) {
+                                            Button(onClick = { DroiUpdates.check(this@DesktopLauncherActivity, force = true) }) { Text("Réessayer") }
+                                        }
+                                    },
+                                    dismissButton = {
+                                        if (!updateWorking) TextButton(onClick = { prelaunch = false; launchUbuntu() }) { Text("Continuer sans mise à jour") }
+                                    }
+                                )
                             }
                         } else if (tab == 1) {
                             DesktopComponents()
@@ -154,7 +192,6 @@ class DesktopLauncherActivity : ComponentActivity() {
                 }
             }
         }
-        DroiUpdates.check(this)
     }
 
     @Composable
