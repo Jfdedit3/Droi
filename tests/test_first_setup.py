@@ -20,3 +20,8 @@ assert apps.index("PYVERIFY\n        [") < apps.index('mv -Tf "$prefix/bin/.open
 assert "exit 3" in apps
 assert "[droi-setup]" in update
 assert "droiddeck-pipewire start" in session
+
+assert "openbox metacity xwayland" in apps
+assert "metacity --replace" in session
+assert "focus-mode click" in session
+assert "start_wm openbox" in session

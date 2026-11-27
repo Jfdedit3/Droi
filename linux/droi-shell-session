@@ -2,15 +2,31 @@
 set -u
 export XDG_CURRENT_DESKTOP=Droi XDG_SESSION_DESKTOP=droi DESKTOP_SESSION=droi
 export XDG_SESSION_TYPE=x11
-# Use Openbox only as the window manager, not a pre-existing desktop shell.
-openbox --sm-disable --config-file /etc/xdg/openbox/rc.xml &
-wm=$!
+# Steam's X11 context menus are known to fail with Openbox. Keep the Droi
+# shell independent of the window manager; prefer Metacity, with Openbox
+# available for recovery when packages cannot be installed offline.
+wm_name=openbox
+start_wm() {
+  if [ "$1" = metacity ]; then
+    # Configure click-to-focus without launching a GNOME desktop.
+    gsettings set org.gnome.desktop.wm.preferences focus-mode click 2>/dev/null || true
+    metacity --replace &
+  else
+    openbox --replace --sm-disable --config-file /etc/xdg/openbox/rc.xml &
+  fi
+  wm=$!
+  wm_name=$1
+  echo "Droi: window manager $wm_name ($wm)"
+}
+if command -v metacity >/dev/null; then start_wm metacity; else start_wm openbox; fi
 notify=
 pipewire_started=0
 cleanup() { if [ "$pipewire_started" = 1 ]; then /usr/local/bin/droiddeck-pipewire stop || true; fi; if [ -n "$notify" ]; then kill "$notify" 2>/dev/null || true; wait "$notify" 2>/dev/null || true; fi; kill "$wm" 2>/dev/null || true; wait "$wm" 2>/dev/null || true; }
 trap cleanup EXIT
 for _ in $(seq 1 40); do
-  kill -0 "$wm" 2>/dev/null || { echo "Droi: Openbox stopped"; exit 1; }
+  if ! kill -0 "$wm" 2>/dev/null; then
+    if [ "$wm_name" = metacity ]; then start_wm openbox; else echo "Droi: window manager stopped"; exit 1; fi
+  fi
   if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id #'; then break; fi
   sleep 0.1
 done
@@ -36,5 +52,15 @@ if /usr/bin/droi-apps setup-needed; then
   /usr/bin/droi-update --first-run || echo "Droi: configuration initiale incomplète; reprise au prochain démarrage" >&2
 else
   /usr/bin/droi-update --before-launch || echo "Droi: mise à jour indisponible; bureau ouvert en mode de secours" >&2
+fi
+# Existing installations may have just installed Metacity in the setup UI.
+if [ "$wm_name" = openbox ] && command -v metacity >/dev/null; then
+  old_wm=$wm
+  start_wm metacity
+  sleep 1
+  if ! kill -0 "$wm" 2>/dev/null; then
+    echo "Droi: Metacity failed; restoring Openbox"
+    if kill -0 "$old_wm" 2>/dev/null; then wm=$old_wm; wm_name=openbox; else start_wm openbox; fi
+  fi
 fi
 /usr/bin/droi-shell

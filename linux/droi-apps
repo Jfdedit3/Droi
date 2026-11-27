@@ -156,7 +156,7 @@ install_defaults() {
 # One-time system setup is versioned independently from the APK.
 setup_marker="$HOME/.local/state/droi/first-setup-v1"
 system_marker="$HOME/.local/state/droi/system-setup-v1"
-setup_needed() { [ ! -f "$setup_marker" ] || ! defaults_needed; }
+setup_needed() { [ ! -f "$setup_marker" ] || ! command -v metacity >/dev/null || ! defaults_needed; }
 system_setup() (
   mkdir -p "$HOME/.cache/droi" "$(dirname "$setup_marker")"
   exec 6>"$HOME/.cache/droi/setup.lock"
@@ -174,7 +174,7 @@ system_setup() (
       "${apt_cmd[@]}" -y --no-remove -o Dpkg::Options::=--force-confold install \
         ca-certificates curl wget unzip zip xz-utils zstd util-linux \
         python3 python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-3.0 gir1.2-wnck-3.0 \
-        openbox xwayland xauth x11-utils x11-xserver-utils dbus-x11 xdg-utils \
+        openbox metacity xwayland xauth x11-utils x11-xserver-utils dbus-x11 xdg-utils \
         desktop-file-utils shared-mime-info fonts-noto-core fonts-dejavu-core \
         libgl1-mesa-dri libglx-mesa0 nodejs npm git aria2 || exit 1
       echo "== SETUP 3/5 Mises à jour Ubuntu (sécurité et paquets) =="
@@ -183,6 +183,14 @@ system_setup() (
     ) || exit 1
     printf "%s\n" complete > "$system_marker.tmp" || exit 1
     mv -f "$system_marker.tmp" "$system_marker" || exit 1
+  elif ! command -v metacity >/dev/null; then
+    (
+      exec 8>"$HOME/.cache/droi/apps.lock"
+      flock -w 600 8 || exit 1
+      echo "== SETUP 2/5 Gestionnaire de fenêtres compatible Steam =="
+      "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update || exit 1
+      "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=600 -o Acquire::Retries=3 -y --no-remove install metacity || exit 1
+    ) || exit 1
   fi
   echo "== SETUP 4/5 Brave, ChatGPT, OpenCode, DepotDownloader =="
   # defaults manages its own locks. Do not hold apps.lock across this call.
