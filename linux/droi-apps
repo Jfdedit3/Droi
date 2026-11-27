@@ -53,6 +53,15 @@ Icon=chatgpt
 Terminal=false
 Categories=Network;Office;
 ENTRY
+  cat > "$dir/droi-game-downloader.desktop" <<'ENTRY'
+[Desktop Entry]
+Type=Application
+Name=Droi Game Downloader
+Exec=/usr/bin/droi-game-downloader
+Icon=folder-download
+Terminal=false
+Categories=Game;Network;
+ENTRY
   cat > "$dir/droi-update.desktop" <<'ENTRY'
 [Desktop Entry]
 Type=Application

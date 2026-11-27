@@ -230,6 +230,7 @@ def main():
         favourites.append(("ChatGPT","chatgpt" if Gtk.IconTheme.get_default().has_icon("chatgpt") else "applications-internet",lambda: open_cmd(chatgpt_launcher)))
     if shutil.which("droi-windows"): favourites.append(("Processus Wine","application-x-executable",lambda: open_cmd("droi-windows","--wine-manager")))
     if shutil.which("droi-update"): favourites.insert(4,("Droi Update","system-software-update",lambda: open_cmd("droi-update")))
+    if shutil.which("droi-game-downloader"): favourites.append(("Game Downloader","folder-download",lambda: open_cmd("droi-game-downloader")))
     def remember(name,ico,action):
         recent[:] = [(n,i,a) for n,i,a in recent if n!=name]
         recent.insert(0,(name,ico,action))

@@ -97,3 +97,7 @@ Brave et ChatGPT passent par `droi-chromium-launch` avec rendu logiciel X11 et W
 ## Téléchargements Steam
 
 Le téléchargeur du client Steam ARM64 utilise huit travailleurs par défaut (maximum douze via `DD_STEAM_PARALLEL`), commence par les plus gros composants et répartit les requêtes entre les CDN Valve. Les fichiers incomplets restent repris et les empreintes SHA-256 sont toujours vérifiées avant extraction. Ce changement n'agit pas sur le débit interne de SteamPipe pour les jeux. Pour les jeux déjà installés sur un autre PC, activer le transfert local dans les paramètres de téléchargement Steam.
+
+## Droi Game Downloader
+
+Le menu Démarrer propose un lanceur GTK pour SteamRE DepotDownloader 3.4.0 ARM64, installé à la demande depuis sa release GitHub épinglée (taille contrôlée, pas de SHA-256 publié pour cet asset). Saisir l’AppID ou le lien Steam et sélectionner 8 à 32 téléchargements parallèles. Connexion QR ou identifiant et Steam Guard dans le terminal, sans stockage du mot de passe par Droi. Les jeux sont téléchargés dans `~/.local/share/droi/games/<appid>` ; la reprise utilise le moteur DepotDownloader. Les fichiers ne sont pas automatiquement enregistrés dans Steam ; DRM, Proton et compatibilité PRoot doivent être vérifiés séparément.
