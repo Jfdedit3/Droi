@@ -30,6 +30,7 @@ for _ in $(seq 1 40); do
   if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id #'; then break; fi
   sleep 0.1
 done
+if [ "${1:-}" != --prepare ]; then
 if [ -x /usr/bin/droi-notify ]; then
   /usr/bin/droi-notify &
   notify=$!
@@ -46,13 +47,17 @@ if /usr/local/bin/droiddeck-pipewire start; then
 else
   echo "Droi: PipeWire unavailable; desktop will continue" >&2
 fi
+fi
 # Initial maintenance finishes before launching the desktop, so users do not
 # compete with the first-run package installer. Offline recovery is available.
-if /usr/bin/droi-apps setup-needed; then
+if [ "${1:-}" = --recovery ]; then
+  : # Recovery should not repeat the startup update.
+elif /usr/bin/droi-apps setup-needed; then
   /usr/bin/droi-update --first-run || echo "Droi: configuration initiale incomplète; reprise au prochain démarrage" >&2
 else
   /usr/bin/droi-update --before-launch || echo "Droi: mise à jour indisponible; bureau ouvert en mode de secours" >&2
 fi
+if [ "${1:-}" = --prepare ]; then exit 0; fi
 # Existing installations may have just installed Metacity in the setup UI.
 if [ "$wm_name" = openbox ] && command -v metacity >/dev/null; then
   old_wm=$wm

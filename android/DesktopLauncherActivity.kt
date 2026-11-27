@@ -30,7 +30,7 @@ import com.droiddeck.launcher.session.SessionService
 
 internal enum class DroiDesktop(val id: String, val label: String, val description: String,
                                 val executables: List<String>, val packages: List<String>) {
-    DROI("droi", "Droi Desktop", "Interface personnalisée · X11",
+    DROI("droi", "Droi Plasma", "KDE Plasma personnalisé · Wayland",
         listOf("openbox", "Xwayland", "xdpyinfo", "xauth", "mcookie", "flock", "xrdb", "xprop", "xterm"),
         listOf("openbox", "python3-gi", "python3-gi-cairo", "gir1.2-gtk-3.0", "gir1.2-wnck-3.0",
             "x11-utils", "x11-xserver-utils", "xterm", "xwayland", "xauth", "util-linux"));
@@ -92,14 +92,14 @@ class DesktopLauncherActivity : ComponentActivity() {
                         TabStrip(listOf("Bureaux", "Composants", "Paramètres"), tab, { tab = it })
                         if (tab == 0) {
                             SettingsGroup("Bureaux Linux") {
-                                MenuItem("Ubuntu", false, detail = "Droi Desktop") {
+                                MenuItem("Ubuntu", false, detail = "Droi Plasma") {
                                     if (SessionState.running) launchUbuntu() else desktopChoice = true
                                 }
-                                Text("Bureau Droi : menu Démarrer, recherche et barre des tâches centrée.")
+                                Text("Droi Plasma : bureau KDE, menu Démarrer, applications épinglées et barre centrée.")
                                 if (desktopChoice) {
                                     AlertDialog(
                                         onDismissRequest = { desktopChoice = false },
-                                        title = { Text("Lancer Droi Desktop") },
+                                        title = { Text("Lancer Droi Plasma") },
                                         text = {
                                             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                                                 verticalArrangement = Arrangement.spacedBy(10.dp)) {

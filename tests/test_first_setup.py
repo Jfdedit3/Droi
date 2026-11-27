@@ -25,3 +25,7 @@ assert "openbox metacity xwayland" in apps
 assert "metacity --replace" in session
 assert "focus-mode click" in session
 assert "start_wm openbox" in session
+
+assert 'if [ "${1:-}" = --prepare ]; then exit 0; fi' in session
+assert 'if [ "${1:-}" = --recovery ]; then' in session
+assert "droi-opencode.desktop" in apps

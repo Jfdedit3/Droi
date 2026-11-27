@@ -7,6 +7,12 @@ guest=Path(sys.argv[1]).read_text()
 assert set(re.findall(r'^    [A-Z]+\("([a-z]+)",',activity,re.M))=={"droi"}
 assert "DroiDesktop.values().forEach" not in activity
 assert 'dbus-run-session -- /usr/bin/droi-shell-session' in guest
-assert 'startplasma-wayland' not in guest
+assert 'startplasma-wayland' in guest
+assert 'droi_shell --prepare' in guest
+assert 'droi_shell --recovery' in guest
+assert 'droi-plasma-1' in guest
+assert 'org.kde.plasma.panelspacer' in guest
+assert 'applications:droi-chatgpt.desktop' in guest
+assert guest.index('droi_shell --prepare') < guest.rindex('startplasma-wayland')
 assert '-displayfd 3' in guest
-print("Single custom Droi desktop verified")
+print("Native custom Plasma with lightweight recovery verified")

@@ -75,6 +75,15 @@ Icon=system-software-update
 Terminal=false
 Categories=System;Settings;
 ENTRY
+  cat > "$dir/droi-opencode.desktop" <<'ENTRY'
+[Desktop Entry]
+Type=Application
+Name=OpenCode
+Exec=/usr/bin/opencode
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;
+ENTRY
   rm -f -- "$dir/droi-chatgpt-web.desktop"
   cat > "$bin/droi-brave" <<'BRAVE'
 #!/bin/bash
