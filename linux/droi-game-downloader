@@ -45,7 +45,9 @@ def install_engine():
         ENGINE.parent.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ENGINE.parent) as temp:
             temp=Path(temp); archive=temp/"engine.zip"; target=temp/"extract"; target.mkdir()
-            subprocess.run(["curl","--proto","=https","--proto-redir","=https","-fL","--retry","3","-o",str(archive),URL],check=True)
+            print("DepotDownloader ARM64 : téléchargement de 32 Mo...",flush=True)
+            subprocess.run(["curl","--proto","=https","--proto-redir","=https","-fL","--retry","3","--connect-timeout","15","--max-time","600","--progress-bar","-o",str(archive),URL],check=True)
+            print("DepotDownloader : vérification et extraction...",flush=True)
             if archive.stat().st_size!=32026406:
                 raise RuntimeError("Taille du paquet moteur inattendue")
             with zipfile.ZipFile(archive) as z:

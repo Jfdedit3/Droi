@@ -6,7 +6,8 @@ export XDG_SESSION_TYPE=x11
 openbox --sm-disable --config-file /etc/xdg/openbox/rc.xml &
 wm=$!
 notify=
-cleanup() { if [ -n "$notify" ]; then kill "$notify" 2>/dev/null || true; wait "$notify" 2>/dev/null || true; fi; kill "$wm" 2>/dev/null || true; wait "$wm" 2>/dev/null || true; }
+pipewire_started=0
+cleanup() { if [ "$pipewire_started" = 1 ]; then /usr/local/bin/droiddeck-pipewire stop || true; fi; if [ -n "$notify" ]; then kill "$notify" 2>/dev/null || true; wait "$notify" 2>/dev/null || true; fi; kill "$wm" 2>/dev/null || true; wait "$wm" 2>/dev/null || true; }
 trap cleanup EXIT
 for _ in $(seq 1 40); do
   kill -0 "$wm" 2>/dev/null || { echo "Droi: Openbox stopped"; exit 1; }
@@ -23,6 +24,11 @@ if [ -x /usr/bin/droi-notify ]; then
   done
 else
   echo "Droi: notification program missing from guest; restart after updating APK" >&2
+fi
+if /usr/local/bin/droiddeck-pipewire start; then
+  pipewire_started=1
+else
+  echo "Droi: PipeWire unavailable; desktop will continue" >&2
 fi
 # Initial maintenance finishes before launching the desktop, so users do not
 # compete with the first-run package installer. Offline recovery is available.

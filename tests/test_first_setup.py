@@ -11,3 +11,8 @@ assert session.index("droi-update --first-run") < session.rindex("/usr/bin/droi-
 assert '"setup"],stdout=subprocess.PIPE' in update
 assert "--no-remove" in apps and "--with-new-pkgs" in apps
 print("First setup integration checks passed")
+
+assert apps.index('mv -f "$system_marker.tmp" "$system_marker"') < apps.index("== SETUP 4/5")
+assert "timeout 30" in apps
+assert "[droi-setup]" in update
+assert "droiddeck-pipewire start" in session

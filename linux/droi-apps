@@ -123,21 +123,25 @@ defaults_needed() {
 install_defaults() {
   mkdir -p "$HOME/.cache/droi"
   exec 7>"$HOME/.cache/droi/defaults.lock"
-  flock -n 7 || { echo "Installation initiale déjà en cours."; return 0; }
+  flock -n 7 || { echo "Installation initiale déjà en cours."; return 1; }
   umask 077
   export DEBIAN_FRONTEND=noninteractive
   local failed=0
   exec > >(tee -a "$HOME/.cache/droi/default-apps.log") 2>&1
   echo "=== Droi : installation des applications par défaut ==="
+  echo "== Vérification Brave =="
   if ! installed_package brave-browser || [ ! -x /usr/bin/brave-browser ]; then
     /usr/bin/droi-apps install brave latest || failed=1
   fi
+  echo "== Vérification ChatGPT =="
   if ! installed_package chatgpt || [ ! -x /usr/bin/chatgpt ]; then
     /usr/bin/droi-apps install chatgpt latest || failed=1
   fi
+  echo "== Vérification OpenCode =="
   if [ ! -x /usr/local/lib/droi-opencode/bin/opencode ]; then
     /usr/bin/droi-apps install opencode latest || failed=1
   fi
+  echo "== Vérification DepotDownloader =="
   if [ ! -x "$HOME/.local/share/droi/depotdownloader/DepotDownloader_3.4.0/DepotDownloader" ]; then
     /usr/bin/droi-game-downloader --install-engine || failed=1
   fi
@@ -148,6 +152,7 @@ install_defaults() {
 }
 # One-time system setup is versioned independently from the APK.
 setup_marker="$HOME/.local/state/droi/first-setup-v1"
+system_marker="$HOME/.local/state/droi/system-setup-v1"
 setup_needed() { [ ! -f "$setup_marker" ] || ! defaults_needed; }
 system_setup() (
   mkdir -p "$HOME/.cache/droi" "$(dirname "$setup_marker")"
@@ -155,7 +160,7 @@ system_setup() (
   flock -n 6 || { echo "Configuration initiale déjà en cours."; exit 1; }
   umask 077
   export DEBIAN_FRONTEND=noninteractive
-  if [ ! -f "$setup_marker" ]; then
+  if [ ! -f "$setup_marker" ] && [ ! -f "$system_marker" ]; then
     (
       exec 8>"$HOME/.cache/droi/apps.lock"
       flock -w 600 8 || { echo "Un autre gestionnaire Droi utilise APT."; exit 1; }
@@ -173,6 +178,8 @@ system_setup() (
       "${apt_cmd[@]}" -y --with-new-pkgs --no-remove -o Dpkg::Options::=--force-confold upgrade || exit 1
       "${apt_cmd[@]}" check || exit 1
     ) || exit 1
+    printf "%s\n" complete > "$system_marker.tmp" || exit 1
+    mv -f "$system_marker.tmp" "$system_marker" || exit 1
   fi
   echo "== SETUP 4/5 Brave, ChatGPT, OpenCode, DepotDownloader =="
   # defaults manages its own locks. Do not hold apps.lock across this call.
@@ -284,7 +291,8 @@ case "${1:-}" in
         prefix=/usr/local/lib/droi-opencode
         "${root_cmd[@]}" mkdir -p "$prefix"
         "${root_cmd[@]}" npm install --global --prefix "$prefix" --include=optional --no-audit --no-fund "@opencode/cli@$version"
-        "$prefix/bin/opencode" --version
+        echo "OpenCode : vérification de l’exécutable (30 s maximum)"
+        timeout 30 "$prefix/bin/opencode" --version
         ;;
       *) usage; exit 2 ;;
     esac

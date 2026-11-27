@@ -19,10 +19,10 @@ index ee1e3a3..0438bde 100644
  export APPIMAGE_EXTRACT_AND_RUN=1
  [ -e /etc/xdg/kiorc ] || printf '[Executable scripts]\nbehaviourOnLaunch=execute\n' >/etc/xdg/kiorc 2>/dev/null
  desktop_dir=$(xdg-user-dir DESKTOP 2>/dev/null); [ -n "$desktop_dir" ] && [ "$desktop_dir" != "$HOME" ] || desktop_dir=$HOME/Desktop
-@@ -224,13 +227,74 @@
- if ! /usr/local/bin/droiddeck-pipewire start; then
-   echo "== pipewire: not running; screen capture has no picture"
- fi
+@@ -224,13 +227,70 @@
+-if ! /usr/local/bin/droiddeck-pipewire start; then
+-  echo "== pipewire: not running; screen capture has no picture"
+-fi
 -echo "== droiddeck-desktop: Plasma on $WAYLAND_DISPLAY"
 -dbus-run-session -- startplasma-wayland
 -rc=$?
@@ -101,7 +101,6 @@ index ee1e3a3..0438bde 100644
 +
 +droi_shell
 +rc=$?
-+/usr/local/bin/droiddeck-pipewire stop
 +echo "== Droi Desktop ended ($rc)"
 +exit $rc
 diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env b/tools/linuxfs/overlay/usr/local/bin/droiddeck-game-env

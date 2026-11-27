@@ -115,3 +115,7 @@ Au premier démarrage du bureau, Droi ouvre une fenêtre de configuration automa
 ## Vérification avant chaque démarrage
 
 Avant d'ouvrir Ubuntu, le lanceur Android vérifie la dernière release Droi et télécharge automatiquement un APK plus récent (activé par défaut, désactivable dans Paramètres). La signature reste vérifiée et Android demande confirmation. En l’absence de nouvelle version, le lancement continue. Dans Ubuntu, la configuration initiale installe les dépendances et applications ; aux lancements suivants, Droi Update actualise les dépôts et installe les mises à jour compatibles avant le bureau. En cas d'échec réseau, il est possible de réessayer ou de continuer hors ligne. Pas de changement majeur de distribution ni de suppression automatique de paquets.
+
+### Reprise de la configuration initiale et diagnostics
+
+Les étapes système réussies disposent de leur propre marqueur. Une installation applicative interrompue ne relance pas inutilement l'intégralité des mises à jour Ubuntu. La vérification OpenCode est bornée à 30 secondes, et la progression de configuration est recopiée dans le journal de session exportable. PipeWire démarre dans le bus D-Bus graphique et est arrêté avant la fin de celui-ci.
