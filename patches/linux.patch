@@ -276,6 +276,7 @@ index bbacb76..01397ee 100755
 +fi
  total=$(grep -c . "$work/parts" 2>/dev/null || echo 0)
  total_bytes=$(awk '{ n += $4 } END { print n + 0 }' "$work/parts")
+ 
 @@ -418,6 +440,7 @@ while read -r block file sum size; do
      fi
    done
