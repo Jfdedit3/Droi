@@ -7,13 +7,14 @@ usage() {
   cat <<'HELP'
 Droi : gestionnaire d’applications Linux
   droi-apps status
+  droi-apps install chatgpt latest
   droi-apps install chatgpt VERSION SHA256 [FICHIER_DEB]
   droi-apps install opencode VERSION
   droi-apps install brave VERSION
   droi-apps shortcuts
 ChatGPT : SHA-256 attendu obtenu depuis une source de confiance.
 Brave : utilise un dépôt APT signé déjà configuré ; voir README si absent.
-Aucune installation ni suppression automatique.
+ChatGPT peut être installé à la demande depuis son raccourci.
 HELP
 }
 shortcuts() {
@@ -24,10 +25,18 @@ shortcuts() {
   cat > "$bin/chatgpt" <<'LAUNCH'
 #!/bin/bash
 set -eu
-if [ ! -x /usr/bin/chatgpt ]; then
-  echo "ChatGPT Desktop absent. Utilise droi-apps install chatgpt VERSION SHA256." >&2
+if [ ! -x /usr/bin/chatgpt ] || [ "$(dpkg-query -W -f='${Status}' chatgpt 2>/dev/null || true)" != "install ok installed" ]; then
+  # A click on the launcher is an explicit request to install the native app.
+  if [ -t 0 ]; then exec /usr/bin/droi-apps install-launch-chatgpt; fi
+  if command -v konsole >/dev/null; then exec konsole -e /usr/bin/droi-apps install-launch-chatgpt; fi
+  if command -v xfce4-terminal >/dev/null; then exec xfce4-terminal -x /usr/bin/droi-apps install-launch-chatgpt; fi
+  if command -v qterminal >/dev/null; then exec qterminal -e /usr/bin/droi-apps install-launch-chatgpt; fi
+  if command -v xterm >/dev/null; then exec xterm -e /usr/bin/droi-apps install-launch-chatgpt; fi
+  echo "Aucun terminal graphique disponible. Lance droi-apps install chatgpt latest." >&2
   exit 1
 fi
+export TMPDIR=/tmp
+export ELECTRON_OZONE_PLATFORM_HINT=x11
 export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 mkdir -p "$CODEX_HOME"
 chmod 700 "$CODEX_HOME"
@@ -36,36 +45,43 @@ if [ "$(id -u)" = 0 ]; then
     if command -v kdialog >/dev/null && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
       kdialog --warningyesno "Cette session Linux tourne en root. ChatGPT ne peut pas utiliser le sandbox Chromium ici. Continuer sans sandbox (isolation réduite) ? Sinon utilise chatgpt.com." || exit 0
     else
-      echo "Sandbox indisponible en root. Utilise chatgpt.com ou, si tu acceptes le risque, chatgpt --no-sandbox." >&2
-      exit 1
+      if [ -t 0 ]; then
+        read -r -p "Sandbox Chromium indisponible. Continuer sans cette isolation ? [o/N] " answer
+        case "$answer" in o|O|oui|Oui) ;; *) exit 0 ;; esac
+      else
+        echo "Sandbox indisponible en root. Lance ChatGPT depuis un terminal pour confirmer." >&2
+        exit 1
+      fi
     fi
   fi
-  exec /usr/bin/chatgpt --no-sandbox "$@"
+  exec /usr/bin/chatgpt --no-sandbox --ozone-platform=x11 --disable-gpu "$@"
 fi
-exec /usr/bin/chatgpt "$@"
+exec /usr/bin/chatgpt --ozone-platform=x11 "$@"
 LAUNCH
   chmod 0755 "$bin/chatgpt"
   cat > "$dir/droi-chatgpt.desktop" <<ENTRY
 [Desktop Entry]
 Type=Application
-Name=ChatGPT Desktop
+Name=ChatGPT
 Exec="$bin/chatgpt"
 Icon=chatgpt
 Terminal=false
 Categories=Network;Office;
 ENTRY
-  cat > "$dir/droi-chatgpt-web.desktop" <<'ENTRY'
-[Desktop Entry]
-Type=Application
-Name=ChatGPT Web
-Exec=xdg-open https://chatgpt.com/
-Icon=web-browser
-Terminal=false
-Categories=Network;
-ENTRY
+  rm -f -- "$dir/droi-chatgpt-web.desktop"
 }
 case "${1:-}" in
   shortcuts) shortcuts ;;
+  install-launch-chatgpt)
+    echo "Installation de ChatGPT Desktop officiel (ARM64)"
+    if ! /usr/bin/droi-apps install chatgpt latest; then
+      echo "Échec de l'installation. Consulte les erreurs ci-dessus."
+      if [ -t 0 ]; then read -r -p "Entrée pour fermer..." _; fi
+      exit 1
+    fi
+    echo "Installation terminée."
+    if [ "$(id -u)" = 0 ]; then exec /usr/local/bin/chatgpt; else exec "$HOME/.local/bin/chatgpt"; fi
+    ;;
   status)
     dpkg-query -W -f='${Package} ${Version}\n' chatgpt brave-browser 2>/dev/null || true
     if [ -x /usr/local/bin/opencode ]; then /usr/local/bin/opencode --version || true; fi
@@ -74,14 +90,21 @@ case "${1:-}" in
     app="${2:-}"
     version="${3:-}"
     [ -n "$version" ] || { usage; exit 2; }
-    [[ "$version" =~ ^[0-9][A-Za-z0-9.+:~_-]*$ ]] || { echo "Version invalide" >&2; exit 2; }
+    if [ "$app:$version" != "chatgpt:latest" ]; then
+      [[ "$version" =~ ^[0-9][A-Za-z0-9.+:~_-]*$ ]] || { echo "Version invalide" >&2; exit 2; }
+    fi
     mkdir -p "$HOME/.cache/droi"
     exec 8>"$HOME/.cache/droi/apps.lock"
     flock 8
     case "$app" in
       chatgpt)
         digest="${4:-}"
-        [[ "$digest" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "SHA-256 attendu obligatoire" >&2; exit 2; }
+        if [ "$version" != latest ]; then
+          [[ "$digest" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "SHA-256 attendu obligatoire" >&2; exit 2; }
+        else
+          [ -z "$digest" ] && [ -z "${5:-}" ] || { echo "latest utilise uniquement le téléchargement officiel" >&2; exit 2; }
+        fi
+        [ "$(dpkg --print-architecture)" = arm64 ] || { echo "Ubuntu ARM64 requis" >&2; exit 1; }
         temp="$(mktemp -d)"
         trap 'rm -rf -- "$temp"' EXIT
         deb="$temp/chatgpt-arm64.deb"
@@ -91,12 +114,20 @@ case "${1:-}" in
           curl --proto '=https' --proto-redir '=https' -fL --retry 3 \
             https://persistent.oaistatic.com/codex-app-prod/linux/deb/latest/chatgpt_arm64.deb -o "$deb"
         fi
-        printf '%s  %s\n' "$digest" "$deb" | sha256sum -c -
+        if [ "$version" != latest ]; then
+          printf '%s  %s\n' "$digest" "$deb" | sha256sum -c -
+        fi
         [ "$(dpkg-deb -f "$deb" Package)" = chatgpt ]
         [ "$(dpkg-deb -f "$deb" Architecture)" = arm64 ]
-        [ "$(dpkg-deb -f "$deb" Version)" = "$version" ] || { echo "Version du paquet différente de celle demandée" >&2; exit 1; }
+        actual_version="$(dpkg-deb -f "$deb" Version)"
+        [ -n "$actual_version" ]
+        [ "$version" = latest ] || [ "$actual_version" = "$version" ] || { echo "Version du paquet différente de celle demandée" >&2; exit 1; }
+        echo "Installation du paquet officiel ChatGPT $actual_version (arm64)"
         chmod 755 "$temp"; chmod 644 "$deb"
+        "${root_cmd[@]}" apt-get -o Acquire::Retries=3 update
         "${root_cmd[@]}" apt-get -o DPkg::Lock::Timeout=180 install -y "$deb"
+        [ "$(dpkg-query -W -f='${Status}' chatgpt)" = "install ok installed" ]
+        [ -x /usr/bin/chatgpt ]
         shortcuts
         ;;
       brave)
