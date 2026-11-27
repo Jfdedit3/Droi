@@ -153,3 +153,7 @@ ChatGPT et Brave proposent au premier lancement une confirmation française du m
 ## Droi Plasma Aurora
 
 Le profil Plasma 2 remplace le fond DroidDeck par un fond vectoriel original Aurora, ajoute un bouton Démarrer Droi, un panneau flottant avec icônes centrées, le style Breeze Dark, un accent bleu, des bordures de fenêtres réduites et des animations plus courtes. Il sauvegarde une fois l'ancienne disposition Plasma, puis laisse les réglages utilisateur intacts aux démarrages suivants. Seul le raccourci Return.desktop identique au raccourci généré par DroidDeck est déplacé dans la sauvegarde. Aucun widget tiers ni téléchargement de thème. Le rendu exact et la prise en charge du panneau flottant dépendent de la version Plasma installée.
+
+## Droi Start — Plasma Aurora 3
+
+Le panneau utilise le nouveau plasmoid `org.droi.start`, intégré localement au script de démarrage. Il propose une grille compacte, la recherche des applications par les modèles natifs KDE, une page toutes les applications, une zone de session Ubuntu sans affichage de root, et des animations QML de fondu, translation et échelle de 120 à 190 ms. La fermeture explicite est animée ; la fermeture imposée par Plasma (clic extérieur) reste gérée par le système. Le logo du fond d'écran est déplacé à droite. L'ancienne disposition du panneau est sauvegardée une seule fois. Kickoff reste installable comme alternative via les widgets Plasma. Les tests CI vérifient l'intégration et les métadonnées, pas le rendu QML sous Android.

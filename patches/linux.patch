@@ -1,7 +1,7 @@
 diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/droiddeck-desktop
 --- a/tools/linuxfs/desktop/droiddeck-desktop
 +++ b/tools/linuxfs/desktop/droiddeck-desktop
-@@ -1,236 +1,375 @@
+@@ -1,236 +1,675 @@
 -#!/bin/bash
 -set -u
 -export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=KDE XDG_SESSION_DESKTOP=KDE DESKTOP_SESSION=plasma
@@ -294,8 +294,8 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +<path d="M-90 850 C360 1010 680 720 930 435 S1510 60 2020 200 L2020 350 C1510 215 1240 365 1040 625 S530 1080 -90 980Z" fill="url(#a)"/>
 +<path d="M-90 850 C360 1010 680 720 930 435 S1510 60 2020 200" fill="none" stroke="#a5ddff" stroke-opacity=".65" stroke-width="3"/>
 +<path d="M0 1020 C460 1110 810 855 1030 685 S1610 385 1920 515" fill="none" stroke="#6194fb" stroke-opacity=".35" stroke-width="2"/>
-+<g transform="translate(96 108)" fill="#d3e5ff" opacity=".86"><rect width="14" height="14" rx="3"/><rect x="18" width="14" height="14" rx="3"/><rect y="18" width="14" height="14" rx="3"/><rect x="18" y="18" width="14" height="14" rx="3"/></g>
-+<text x="145" y="132" font-family="sans-serif" font-size="25" letter-spacing="5" fill="#d3e5ff" opacity=".86">DROI</text>
++<g transform="translate(1660 100)" fill="#d3e5ff" opacity=".86"><rect width="14" height="14" rx="3"/><rect x="18" width="14" height="14" rx="3"/><rect y="18" width="14" height="14" rx="3"/><rect x="18" y="18" width="14" height="14" rx="3"/></g>
++<text x="1708" y="124" font-family="sans-serif" font-size="25" letter-spacing="5" fill="#d3e5ff" opacity=".86">DROI</text>
 +</svg>
 +DROI_WALL
 +cat > /usr/share/icons/hicolor/scalable/apps/droi-start.svg <<'DROI_ICON'
@@ -304,6 +304,320 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +<g fill="url(#g)"><rect x="8" y="8" width="22" height="22" rx="4"/><rect x="34" y="8" width="22" height="22" rx="4"/><rect x="8" y="34" width="22" height="22" rx="4"/><rect x="34" y="34" width="22" height="22" rx="4"/></g>
 +</svg>
 +DROI_ICON
++# Install Droi's self-contained native QML applet before Plasma loads the panel.
++droi_start=/usr/share/plasma/plasmoids/org.droi.start
++mkdir -p "$droi_start/contents/ui"
++cat > "$droi_start/metadata.json" <<'DROI_START_META'
++{
++  "KPackageStructure": "Plasma/Applet",
++  "KPlugin": {
++    "Id": "org.droi.start",
++    "Name": "Droi Start",
++    "Description": "Menu Démarrer animé pour Droi Plasma",
++    "Icon": "droi-start",
++    "Category": "Application Launchers",
++    "License": "GPL-3.0-or-later",
++    "Version": "1.0",
++    "Authors": [
++      {
++        "Name": "Droi"
++      }
++    ]
++  },
++  "X-Plasma-API-Minimum-Version": "6.0",
++  "X-Plasma-Provides": [
++    "org.kde.plasma.launchermenu"
++  ]
++}
++DROI_START_META
++cat > "$droi_start/contents/ui/main.qml" <<'DROI_START_QML'
++// SPDX-License-Identifier: GPL-3.0-or-later
++import QtQuick
++import QtQuick.Controls as Controls
++import QtQuick.Layouts
++import QtQuick.Window
++import org.kde.plasma.plasmoid
++import org.kde.kirigami as Kirigami
++import org.kde.plasma.private.kicker as Kicker
++import org.kde.plasma.private.sessions as Sessions
++
++PlasmoidItem {
++    id: root
++    Plasmoid.icon: "droi-start"
++    preferredRepresentation: compactRepresentation
++    property string query: ""
++    property bool allApps: false
++    property var pendingAction: null
++    readonly property var pins: [
++        "applications:org.kde.dolphin.desktop", "applications:droi-brave.desktop",
++        "applications:steamdeck-steam.desktop", "applications:droi-chatgpt.desktop",
++        "applications:org.kde.konsole.desktop", "applications:droi-opencode.desktop",
++        "applications:droi-game-downloader.desktop", "applications:droi-update.desktop",
++        "applications:systemsettings.desktop"
++    ]
++    Kicker.RootModel {
++        id: apps
++        autoPopulate: false
++        appletInterface: root
++        appNameFormat: 0
++        flat: true
++        sorted: true
++        showSeparators: false
++        showTopLevelItems: false
++        showAllApps: true
++        showAllAppsCategorized: false
++        showRecentApps: false
++        showRecentDocs: false
++        showPowerSession: false
++        Component.onCompleted: {
++            favoritesModel.initForClient("org.droi.start.favorites-" + Plasmoid.id)
++            if (favoritesModel.count === 0)
++                favoritesModel.portOldFavorites(root.pins)
++            refresh()
++        }
++    }
++    Kicker.RunnerModel {
++        id: runner
++        appletInterface: root
++        mergeResults: true
++        runners: ["krunner_services"]
++        favoritesModel: apps.favoritesModel
++        query: root.query
++    }
++    Sessions.SessionManagement { id: session }
++    function closeAnimated(action) {
++        if (!root.expanded || closing.running) return
++        root.pendingAction = action || null
++        if (root.fullRepresentationItem) root.fullRepresentationItem.revealed = false
++        closing.start()
++    }
++    Timer {
++        id: closing
++        interval: 135
++        onTriggered: {
++            const action = root.pendingAction
++            root.pendingAction = null
++            root.expanded = false
++            if (action) action()
++        }
++    }
++    onExpandedChanged: {
++        if (!expanded) {
++            closing.stop()
++            pendingAction = null
++            query = ""
++            allApps = false
++        }
++    }
++    Component.onCompleted: {
++        if (Plasmoid.hasOwnProperty("activationTogglesExpanded"))
++            Plasmoid.activationTogglesExpanded = true
++    }
++    compactRepresentation: MouseArea {
++        id: button
++        implicitWidth: 42
++        implicitHeight: 42
++        Layout.preferredWidth: height
++        Layout.minimumWidth: Math.min(height, 42)
++        hoverEnabled: true
++        property bool wasExpanded: false
++        Accessible.name: "Démarrer"
++        Accessible.role: Accessible.Button
++        onPressed: wasExpanded = root.expanded
++        onClicked: {
++            if (wasExpanded && root.expanded) root.closeAnimated(null)
++            else root.expanded = true
++        }
++        Rectangle {
++            anchors.fill: parent
++            anchors.margins: 3
++            radius: 8
++            color: root.expanded ? "#354d72" : button.containsMouse ? "#293a52" : "transparent"
++            Behavior on color { ColorAnimation { duration: 100 } }
++        }
++        Kirigami.Icon {
++            anchors.centerIn: parent
++            width: Math.min(parent.width, parent.height) * 0.72
++            height: width
++            source: "droi-start"
++        }
++    }
++    fullRepresentation: Item {
++        id: menu
++        implicitWidth: Math.min(510, Math.max(280, Screen.desktopAvailableWidth - 32))
++        implicitHeight: Math.min(480, Math.max(260, Screen.desktopAvailableHeight - 96))
++        Layout.minimumWidth: implicitWidth
++        Layout.minimumHeight: implicitHeight
++        Layout.preferredWidth: implicitWidth
++        Layout.preferredHeight: implicitHeight
++        property bool revealed: false
++        readonly property bool searching: root.query.trim().length > 0
++        readonly property var applicationModel: apps.count ? apps.modelForRow(0) : null
++        readonly property var activeModel: searching ? (runner.count ? runner.modelForRow(0) : null)
++            : (root.allApps || !apps.favoritesModel.count ? applicationModel : apps.favoritesModel)
++        function showMenu() {
++            revealed = false
++            Qt.callLater(function() {
++                if (!root.expanded) return
++                revealed = true
++                search.forceActiveFocus()
++            })
++        }
++        function launchAt(row) {
++            const source = activeModel
++            if (!source || row < 0 || row >= grid.count || closing.running) return
++            root.closeAnimated(function() { source.trigger(row, "", null) })
++        }
++        Connections {
++            target: root
++            function onExpandedChanged() {
++                if (root.expanded) menu.showMenu()
++                else menu.revealed = false
++            }
++        }
++        Component.onCompleted: if (root.expanded) showMenu()
++        Keys.onEscapePressed: root.closeAnimated(null)
++        Rectangle {
++            id: surface
++            anchors.fill: parent
++            radius: 16
++            color: "#ed172332"
++            border.color: "#50647b"
++            border.width: 1
++            clip: true
++            opacity: menu.revealed ? 1 : 0
++            scale: menu.revealed ? 1 : 0.97
++            transformOrigin: Item.Bottom
++            transform: Translate {
++                y: menu.revealed ? 0 : 16
++                Behavior on y { NumberAnimation { duration: menu.revealed ? 190 : 125; easing.type: Easing.OutCubic } }
++            }
++            Behavior on opacity { NumberAnimation { duration: menu.revealed ? 180 : 120; easing.type: Easing.OutCubic } }
++            Behavior on scale { NumberAnimation { duration: menu.revealed ? 190 : 125; easing.type: Easing.OutCubic } }
++            ColumnLayout {
++                anchors.fill: parent
++                anchors.margins: 16
++                spacing: 12
++                RowLayout {
++                    Layout.fillWidth: true
++                    spacing: 10
++                    Kirigami.Icon { source: "droi-start"; Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
++                    Text { text: "Droi"; color: "#edf5ff"; font.pixelSize: 19; font.bold: true }
++                    Item { Layout.fillWidth: true }
++                    Controls.ToolButton {
++                        text: "Fermer"
++                        onClicked: root.closeAnimated(null)
++                        Accessible.name: "Fermer le menu Démarrer"
++                    }
++                }
++                Controls.TextField {
++                    id: search
++                    Layout.fillWidth: true
++                    Layout.preferredHeight: 40
++                    placeholderText: "Rechercher une application…"
++                    color: "#f1f5fb"
++                    placeholderTextColor: "#a6b9ce"
++                    selectByMouse: true
++                    background: Rectangle { radius: 9; color: "#233247"; border.color: search.activeFocus ? "#60adff" : "#40516a" }
++                    text: root.query
++                    onTextEdited: root.query = text
++                    onAccepted: menu.launchAt(grid.currentIndex >= 0 ? grid.currentIndex : 0)
++                    Keys.onDownPressed: { grid.forceActiveFocus(); grid.currentIndex = 0 }
++                    Keys.onEscapePressed: root.closeAnimated(null)
++                }
++                RowLayout {
++                    Layout.fillWidth: true
++                    Text {
++                        Layout.fillWidth: true
++                        text: menu.searching ? "Résultats" : root.allApps ? "Toutes les applications" : "Épinglées"
++                        color: "#e2ebf7"; font.pixelSize: 14; font.bold: true
++                    }
++                    Controls.Button {
++                        visible: !menu.searching
++                        text: root.allApps ? "Épinglées" : "Toutes les applications ›"
++                        onClicked: root.allApps = !root.allApps
++                    }
++                }
++                GridView {
++                    id: grid
++                    Layout.fillWidth: true
++                    Layout.fillHeight: true
++                    clip: true
++                    cellWidth: Math.floor(width / Math.max(3, Math.min(5, Math.floor(width / 88))))
++                    cellHeight: 82
++                    model: menu.activeModel
++                    currentIndex: count > 0 ? 0 : -1
++                    keyNavigationEnabled: true
++                    activeFocusOnTab: true
++                    Controls.ScrollBar.vertical: Controls.ScrollBar {}
++                    Keys.onReturnPressed: menu.launchAt(currentIndex)
++                    Keys.onEnterPressed: menu.launchAt(currentIndex)
++                    Keys.onEscapePressed: root.closeAnimated(null)
++                    delegate: Item {
++                        width: grid.cellWidth
++                        height: grid.cellHeight
++                        Rectangle {
++                            anchors.fill: parent
++                            anchors.margins: 3
++                            radius: 9
++                            color: hit.containsMouse || (grid.activeFocus && grid.currentIndex === index) ? "#355171" : "transparent"
++                            Behavior on color { ColorAnimation { duration: 90 } }
++                        }
++                        Column {
++                            anchors.centerIn: parent
++                            width: parent.width - 10
++                            spacing: 6
++                            Kirigami.Icon {
++                                anchors.horizontalCenter: parent.horizontalCenter
++                                width: 32; height: 32
++                                source: model.decoration || "application-x-executable"
++                            }
++                            Text {
++                                width: parent.width
++                                text: model.display || ""
++                                color: "#e8eef8"
++                                font.pixelSize: 11
++                                horizontalAlignment: Text.AlignHCenter
++                                elide: Text.ElideRight
++                            }
++                        }
++                        MouseArea {
++                            id: hit
++                            anchors.fill: parent
++                            hoverEnabled: true
++                            Accessible.name: model.display || ""
++                            Accessible.role: Accessible.Button
++                            onClicked: { grid.currentIndex = index; menu.launchAt(index) }
++                        }
++                    }
++                }
++                Text {
++                    visible: grid.count === 0
++                    Layout.alignment: Qt.AlignHCenter
++                    text: menu.searching ? "Aucun résultat" : "Aucune application disponible"
++                    color: "#b4c6dc"
++                }
++                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#394b61" }
++                RowLayout {
++                    Layout.fillWidth: true
++                    Kirigami.Icon { source: "user-identity"; Layout.preferredWidth: 22; Layout.preferredHeight: 22 }
++                    Text { Layout.fillWidth: true; text: "Session Ubuntu"; color: "#d8e5f6"; font.pixelSize: 12 }
++                    Controls.ToolButton {
++                        visible: session.canLock
++                        text: "Verrouiller"
++                        onClicked: root.closeAnimated(function() { session.lock() })
++                    }
++                    Controls.ToolButton {
++                        visible: session.canLogout
++                        text: "Quitter"
++                        onClicked: root.closeAnimated(function() { session.requestLogout() })
++                    }
++                }
++            }
++        }
++    }
++}
++DROI_START_QML
 +# The stock Plasma layout is customized once per version, not on every login.
 +dd_layout=/usr/share/plasma/look-and-feel/com.valve.vapor.desktop/contents/layouts
 +if [ -d "$dd_layout" ]; then
@@ -335,23 +649,9 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +}
 +
 +panel.addWidget("org.kde.plasma.panelspacer");
-+var kickoff = panel.addWidget("org.kde.plasma.kickoff");
++var kickoff = panel.addWidget("org.droi.start");
 +kickoff.currentConfigGroup = ["Shortcuts"];
 +kickoff.writeConfig("global", "Alt+F1");
-+kickoff.currentConfigGroup = ["General"];
-+kickoff.writeConfig("icon", "droi-start");
-+kickoff.writeConfig("showActionButtonCaptions", true);
-+kickoff.writeConfig("favorites", [
-+    "applications:droi-brave.desktop",
-+    "applications:droi-chatgpt.desktop",
-+    "applications:steamdeck-steam.desktop",
-+    "applications:org.kde.dolphin.desktop",
-+    "applications:org.kde.konsole.desktop",
-+    "applications:droi-opencode.desktop",
-+    "applications:droi-game-downloader.desktop",
-+    "applications:droi-update.desktop",
-+    "applications:systemsettings.desktop",
-+]);
 +
 +var tasks = panel.addWidget("org.kde.plasma.icontasks");
 +tasks.currentConfigGroup = ["General"];
@@ -391,11 +691,11 @@ diff --git a/tools/linuxfs/desktop/droiddeck-desktop b/tools/linuxfs/desktop/dro
 +fi
 +dd_panel_rc="${XDG_CONFIG_HOME:-$HOME/.config}/plasma-org.kde.plasma.desktop-appletsrc"
 +dd_panel_stamp="${XDG_CONFIG_HOME:-$HOME/.config}/droiddeck-panel-layout"
-+if [ "$(cat "$dd_panel_stamp" 2>/dev/null)" != droi-plasma-2 ]; then
-+  dd_panel_backup="$dd_panel_rc.before-droi-plasma-2"
++if [ "$(cat "$dd_panel_stamp" 2>/dev/null)" != droi-plasma-3 ]; then
++  dd_panel_backup="$dd_panel_rc.before-droi-plasma-3"
 +  [ -e "$dd_panel_backup" ] && dd_panel_backup="$dd_panel_backup.$$"
 +  if [ ! -f "$dd_panel_rc" ] || mv "$dd_panel_rc" "$dd_panel_backup"; then
-+    mkdir -p "$(dirname "$dd_panel_stamp")" && echo droi-plasma-2 > "$dd_panel_stamp"
++    mkdir -p "$(dirname "$dd_panel_stamp")" && echo droi-plasma-3 > "$dd_panel_stamp"
 +    if [ -d "$dd_layout" ]; then
 +      kwriteconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage com.valve.vapor.desktop
 +    fi
