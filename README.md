@@ -123,3 +123,7 @@ Les étapes système réussies disposent de leur propre marqueur. Une installati
 ### OpenCode ARM64 sous PRoot
 
 Droi télécharge le paquet natif glibc `@opencode/cli-linux-arm64` depuis NPM, à la version du paquet CLI officiel. Le postinstall générique n'est pas exécuté. Le binaire est testé directement avant remplacement ; la version installée est conservée si la mise à jour échoue. En cas d'échec d'une application, l'installation système peut être terminée et le bureau ouvert ; une prochaine tentative reprend les applications manquantes. Les profils et identifiants OpenCode restent intacts.
+
+## Steam : mode bureau X11
+
+Le profil Droi applique les options CEF logiciel après la sélection des options Vulkan, évite le mode GPU intégré au processus du navigateur et n'exécute plus le script de sortie Big Picture dans une session déjà lancée en mode bureau. Ces changements ciblent notamment les boîtes de dialogue Propriétés et Désinstaller, sans toucher aux fichiers des jeux. La compatibilité sur Android doit être confirmée.

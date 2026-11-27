@@ -55,6 +55,8 @@ jobs:
           git -C upstream apply --check ../patches/android.patch ../patches/linux.patch
           git -C upstream apply ../patches/android.patch ../patches/linux.patch
           bash -n upstream/tools/linuxfs/desktop/droiddeck-desktop
+          bash -n upstream/tools/linuxfs/overlay/usr/local/bin/droiddeck-session
+          python3 tests/test_steam_desktop.py upstream/tools/linuxfs/overlay/usr/local/bin/droiddeck-session
           grep -Fq 'dbus-run-session -- /usr/bin/droi-shell-session' upstream/tools/linuxfs/desktop/droiddeck-desktop
           grep -Fq -- '-displayfd 3' upstream/tools/linuxfs/desktop/droiddeck-desktop
           python3 tests/test_desktop_catalog.py upstream/tools/linuxfs/desktop/droiddeck-desktop

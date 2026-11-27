@@ -445,3 +445,32 @@ diff --git a/tools/release/runtime_inputs.py b/tools/release/runtime_inputs.py
      finally:
          process.stdout.close()
      if process.wait():
+diff --git a/tools/linuxfs/overlay/usr/local/bin/droiddeck-session b/tools/linuxfs/overlay/usr/local/bin/droiddeck-session
+--- a/tools/linuxfs/overlay/usr/local/bin/droiddeck-session
++++ b/tools/linuxfs/overlay/usr/local/bin/droiddeck-session
+@@ -1533,6 +1533,16 @@
+       export DD_WEBHELPER_ARGS
+       echo "== steam: web helper process layout: $DD_WEBHELPER_ARGS (Mali bridge)"
+     fi
++    # Droi X11: do not mix the Deck/Vulkan webhelper layout with software CEF.
++    if [ "${DROI_DESKTOP_ENV:-}" = droi ] && [ "${DD_STEAM_UI:-}" = desktop ]; then
++      _dd_ui=(-nobigpicture)
++      _dd_cef=(-cef-disable-gpu -cef-disable-gpu-compositing)
++      export DD_WEBHELPER_ARGS="--no-zygote --disable-gpu --disable-gpu-compositing -AudioServiceOutOfProcess"
++      export XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb
++      unset STEAM_GAMESCOPE_NIS_SUPPORTED STEAM_GAMESCOPE_FANCY_SCALING_SUPPORT
++      unset GAMESCOPE_WAYLAND_DISPLAY
++      echo "== Droi Steam: X11 desktop CEF software compositing; separate browser process layout"
++    fi
+     if [ "${DD_STEAM_UI:-}" != desktop ]; then
+       if [ "$steam_x64" = 0 ] || [ "${DD_X64_DECK:-1}" != 0 ]; then
+         _dd_ui+=(-steamdeck -steamos3)
+@@ -1908,7 +1918,7 @@
+       fi
+       step "starting the Steam client${DD_STEAM_UI:+ ($DD_STEAM_UI UI)}"
+       desktop_ui_pid=
+-      if [ "${DD_STEAM_UI:-}" = desktop ]; then
++      if [ "${DD_STEAM_UI:-}" = desktop ] && [ "${DROI_DESKTOP_ENV:-}" != droi ]; then
+         /usr/local/bin/droiddeck-steam-desktop-ui &
+         desktop_ui_pid=$!
+       fi
